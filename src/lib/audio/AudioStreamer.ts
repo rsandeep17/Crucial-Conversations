@@ -11,6 +11,8 @@ const OUTPUT_SAMPLE_RATE = 24000; // Gemini Live audio output is 24 kHz PCM.
 export class AudioStreamer {
   private context: AudioContext;
   private gain: GainNode;
+  private analyser: AnalyserNode;
+  private levelBuf: Uint8Array<ArrayBuffer>;
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
 
@@ -18,6 +20,22 @@ export class AudioStreamer {
     this.context = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
     this.gain = this.context.createGain();
     this.gain.connect(this.context.destination);
+    // Tap the model's voice for a real-time level (drives the speaking indicator).
+    this.analyser = this.context.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.levelBuf = new Uint8Array(this.analyser.fftSize);
+    this.gain.connect(this.analyser);
+  }
+
+  /** Current model-voice loudness, 0..1 (RMS of the time-domain waveform). */
+  getLevel(): number {
+    this.analyser.getByteTimeDomainData(this.levelBuf);
+    let sum = 0;
+    for (let i = 0; i < this.levelBuf.length; i++) {
+      const v = (this.levelBuf[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / this.levelBuf.length);
   }
 
   /** GainNode carrying the model's voice — tap this to mix into a recording. */

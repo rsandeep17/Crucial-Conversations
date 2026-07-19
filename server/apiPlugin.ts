@@ -56,11 +56,27 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return (await readRawBody(req)).toString('utf8');
 }
 
-/** Filesystem-safe, sortable session id derived from the current time. */
+/**
+ * Readable, sortable session id: "YYYY-MM-DD HH-MM-SS" in Indian Standard Time.
+ * 24-hour clock; dashes in the time because ':' is illegal in Windows folder
+ * names. Space-separated so the folder reads naturally.
+ */
 function newSessionId(): string {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const suffix = Math.floor(Math.random() * 1e6).toString(36);
-  return `${stamp}-${suffix}`;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const p: Record<string, string> = {};
+  for (const part of parts) p[part.type] = part.value;
+  // en-GB can emit "24" for midnight hour; normalize to "00".
+  const hour = p.hour === '24' ? '00' : p.hour;
+  return `${p.year}-${p.month}-${p.day} ${hour}-${p.minute}-${p.second}`;
 }
 
 async function createSession(body: string): Promise<{ id: string }> {

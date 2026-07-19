@@ -927,6 +927,76 @@ textarea.prd-input {
   font-weight: 400;
 }
 
+/* Live call stage (no transcript — audio-only with speaking cues) */
+.call-stage {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  flex-wrap: wrap;
+  margin: 48px 0 24px;
+}
+
+.participant {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 200px;
+}
+
+.avatar {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--panel-2);
+  transition: transform 0.09s ease-out, box-shadow 0.09s ease-out;
+}
+
+.participant-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.participant-sub {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.speaking-tag {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  min-height: 16px;
+  color: transparent;
+  transition: color 0.1s;
+}
+
+.speaking-tag.on {
+  color: var(--accent);
+}
+
+.participant.speaking .participant-name {
+  color: var(--accent);
+}
+
+.call-hint {
+  text-align: center;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.call-controls {
+  justify-content: center;
+}
+
 .two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;

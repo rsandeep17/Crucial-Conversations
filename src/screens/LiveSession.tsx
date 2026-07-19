@@ -8,7 +8,51 @@ import {
 import { EMPTY_USAGE_DISPLAY, liveCost, formatInr, formatDuration, type LiveUsage } from '../lib/cost';
 import type { SessionConfig } from '../personas/personas';
 import type { Settings } from '../lib/settings';
-import type { Turn } from '../lib/sessionStore';
+
+const SPEAKING_THRESHOLD = 0.045;
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
+}
+
+/** One participant: avatar with a glow ring that reacts to their audio level. */
+function Participant({
+  label,
+  sublabel,
+  avatar,
+  level,
+  kind,
+}: {
+  label: string;
+  sublabel?: string;
+  avatar: string;
+  level: number;
+  kind: 'user' | 'persona';
+}) {
+  const speaking = level > SPEAKING_THRESHOLD;
+  // Scale glow with level; clamp so it stays tasteful.
+  const glow = Math.min(1, level * 6);
+  const ringColor = kind === 'user' ? 'var(--who-user)' : 'var(--who-persona)';
+  return (
+    <div className={`participant ${speaking ? 'speaking' : ''}`}>
+      <div
+        className="avatar"
+        style={{
+          boxShadow: speaking
+            ? `0 0 0 3px ${ringColor}, 0 0 ${18 + glow * 40}px ${glow * 10 + 4}px color-mix(in srgb, ${ringColor} 55%, transparent)`
+            : `0 0 0 1px var(--border-strong)`,
+          transform: `scale(${1 + glow * 0.06})`,
+        }}
+      >
+        {avatar}
+      </div>
+      <div className="participant-name">{label}</div>
+      {sublabel && <div className="participant-sub">{sublabel}</div>}
+      <div className={`speaking-tag ${speaking ? 'on' : ''}`}>{speaking ? 'Speaking' : ' '}</div>
+    </div>
+  );
+}
 
 export function LiveSession({
   config,
@@ -21,10 +65,9 @@ export function LiveSession({
 }) {
   const [status, setStatus] = useState<ConversationStatus>('connecting');
   const [error, setError] = useState<string | null>(null);
-  const [committed, setCommitted] = useState<Turn[]>([]);
-  const [live, setLive] = useState({ user: '', persona: '' });
   const [usage, setUsage] = useState<LiveUsage>(EMPTY_USAGE_DISPLAY);
   const [elapsed, setElapsed] = useState(0);
+  const [levels, setLevels] = useState({ user: 0, persona: 0 });
 
   const convRef = useRef<Conversation | null>(null);
   const endingRef = useRef(false);
@@ -42,10 +85,6 @@ export function LiveSession({
     const conv = new Conversation(config, settings.apiKey, settings.liveModel, {
       onStatus: setStatus,
       onError: setError,
-      onTranscript: (c, u, p) => {
-        setCommitted(c);
-        setLive({ user: u, persona: p });
-      },
       onUsage: setUsage,
       onEndRequested: () => void finishRef.current('persona'),
       onDisconnected: () => void finishRef.current('disconnect'),
@@ -57,15 +96,20 @@ export function LiveSession({
     });
 
     return () => {
-      // Unmount safety: stop without surfacing a result.
       if (!endingRef.current) void conv.stop().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Poll timer + audio levels while live (fast enough for smooth glow).
   useEffect(() => {
     if (status !== 'live') return;
-    const id = setInterval(() => setElapsed(convRef.current?.durationSec ?? 0), 300);
+    const id = setInterval(() => {
+      const c = convRef.current;
+      if (!c) return;
+      setElapsed(c.durationSec);
+      setLevels({ user: c.micLevel, persona: c.personaLevel });
+    }, 90);
     return () => clearInterval(id);
   }, [status]);
 
@@ -107,35 +151,32 @@ export function LiveSession({
         </div>
       )}
 
-      <div className="controls">
+      <div className="call-stage">
+        <Participant
+          label="You"
+          avatar="🎙"
+          level={levels.user}
+          kind="user"
+        />
+        <Participant
+          label={config.persona.name}
+          sublabel={config.persona.title}
+          avatar={initials(config.persona.name)}
+          level={levels.persona}
+          kind="persona"
+        />
+      </div>
+
+      <p className="call-hint muted">
+        {status === 'connecting'
+          ? 'Connecting… allow microphone access.'
+          : 'Just talk — no transcript here on purpose. You’ll see the full transcript and your evaluation right after you end.'}
+      </p>
+
+      <div className="controls call-controls">
         <button className="btn danger" onClick={() => void finish('user')}>
           End conversation
         </button>
-        {status === 'connecting' && <span className="muted">Connecting… allow microphone access.</span>}
-      </div>
-
-      <div className="transcript">
-        {committed.map((t, i) => (
-          <div key={i} className={`bubble ${t.role}`}>
-            <span className="who">{t.role === 'user' ? 'You' : config.persona.name}</span>
-            <span className="what">{t.text}</span>
-          </div>
-        ))}
-        {live.user && (
-          <div className="bubble user pending">
-            <span className="who">You</span>
-            <span className="what">{live.user}</span>
-          </div>
-        )}
-        {live.persona && (
-          <div className="bubble persona pending">
-            <span className="who">{config.persona.name}</span>
-            <span className="what">{live.persona}</span>
-          </div>
-        )}
-        {committed.length === 0 && !live.user && !live.persona && status === 'live' && (
-          <p className="muted">{config.persona.name} will open the meeting. Respond when you're ready.</p>
-        )}
       </div>
     </div>
   );

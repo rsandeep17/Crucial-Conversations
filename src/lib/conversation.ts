@@ -157,6 +157,16 @@ export class Conversation {
     return this.startMs ? (performance.now() - this.startMs) / 1000 : 0;
   }
 
+  /** Live mic loudness (you), 0..1 — for the speaking indicator. */
+  get micLevel(): number {
+    return this.recorder?.getLevel() ?? 0;
+  }
+
+  /** Live model-voice loudness (persona), 0..1 — for the speaking indicator. */
+  get personaLevel(): number {
+    return this.streamer?.getLevel() ?? 0;
+  }
+
   async stop(endedBy: EndedBy = 'user'): Promise<ConversationResult> {
     this.stopped = true;
     if (this.endedBy !== 'disconnect') this.endedBy = endedBy;

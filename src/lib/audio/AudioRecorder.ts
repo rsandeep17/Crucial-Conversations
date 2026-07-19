@@ -16,6 +16,8 @@ export class AudioRecorder {
   private stream: MediaStream | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private worklet: AudioWorkletNode | null = null;
+  private analyser: AnalyserNode | null = null;
+  private levelBuf: Uint8Array<ArrayBuffer> | null = null;
   private onChunk: ((base64Pcm: string) => void) | null = null;
   // Retain the raw mic PCM so we can hand the user's own audio to the evaluator.
   private pcmChunks: Int16Array[] = [];
@@ -47,6 +49,13 @@ export class AudioRecorder {
     await this.context.audioWorklet.addModule('/worklets/pcm-recorder-processor.js');
 
     this.source = this.context.createMediaStreamSource(this.stream);
+
+    // Tap the mic for a real-time level (drives the speaking indicator).
+    this.analyser = this.context.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.levelBuf = new Uint8Array(new ArrayBuffer(this.analyser.fftSize));
+    this.source.connect(this.analyser);
+
     this.worklet = new AudioWorkletNode(this.context, 'pcm-recorder-processor');
     this.worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
       this.pcmChunks.push(new Int16Array(event.data.slice(0)));
@@ -55,6 +64,18 @@ export class AudioRecorder {
 
     this.source.connect(this.worklet);
     // Do NOT connect the worklet to destination — we don't want to hear our own mic.
+  }
+
+  /** Current mic loudness, 0..1 (RMS of the time-domain waveform). */
+  getLevel(): number {
+    if (!this.analyser || !this.levelBuf) return 0;
+    this.analyser.getByteTimeDomainData(this.levelBuf);
+    let sum = 0;
+    for (let i = 0; i < this.levelBuf.length; i++) {
+      const v = (this.levelBuf[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / this.levelBuf.length);
   }
 
   /** Build a WAV blob of everything the user said this session (mic only). */
@@ -71,6 +92,8 @@ export class AudioRecorder {
     if (this.context && this.context.state !== 'closed') await this.context.close();
     this.worklet = null;
     this.source = null;
+    this.analyser = null;
+    this.levelBuf = null;
     this.stream = null;
     this.context = null;
     this.onChunk = null;

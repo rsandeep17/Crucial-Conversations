@@ -4,7 +4,10 @@
       "WebFetch(domain:ai.google.dev)",
       "WebSearch",
       "PowerShell(node --version)",
-      "PowerShell(npm --version)"
+      "PowerShell(npm --version)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "PowerShell(npm run typecheck 2>&1)"
     ]
   }
 }

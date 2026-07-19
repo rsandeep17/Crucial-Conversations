@@ -46,7 +46,7 @@ Key modules:
 1. **Setup:** you paste a PRD, choose a persona and an intensity (Collegial / Challenging / Hostile), and optionally add a scenario note.
 2. **Prompt assembly:** `buildSystemInstruction()` builds ONE system-instruction string = framing + the persona's character text + the intensity modifier + behavior rules + your scenario note + your full PRD (verbatim). There is **no pre-generated question list** — the model improvises in character, grounded in the PRD that sits in its context.
 3. **Who speaks first:** the **persona** opens the meeting (the behavior rules instruct it to greet and raise its first concern without waiting).
-4. **Turn-taking:** automatic, via the Live API's server-side voice-activity detection. Stop talking → the persona responds. Talk over it → it stops (barge-in). No turn counter.
+4. **Turn-taking:** automatic, via the Live API's server-side voice-activity detection. Stop talking → the persona responds. Talk over it → it stops (barge-in). No turn counter. **During the call there is NO live transcript** (it was distracting) — instead a Zoom-like stage shows two avatars (you + the persona) whose glow rings react to real mic/model audio levels. The full transcript appears only afterward on the summary.
 5. **Ending:** two ways. (a) You click "End conversation" anytime. (b) The persona wraps up naturally: it's instructed to close once it has pressure-tested the key decisions, then it calls an `end_meeting` function tool; the app lets the closing line finish playing, then ends. A **soft guardrail** (Settings: warn-at-cost and warn-at-minutes) turns the live cost/time meters red and shows a nudge when exceeded — it never cuts you off.
 6. **On end:** the session is saved to `data/sessions/<id>/`, then an **evaluation** runs automatically (`gemini-3.5-flash` over the transcript + PRD, and — unless disabled in Settings — the user's spoken audio as WAV, so delivery/tone is judged too): scores on 6 dimensions, plus what went well / what to improve where **each point is anchored to the actual exchange** (the persona's line, the user's verbatim words, and a timestamp), what to practice next, and follow-up challenges. The report renders on the summary screen and is saved as `evaluation.md` (scores + eval cost merged into `meta.json`). The summary shows **duration and total cost (voice + eval)**. Transcript turns carry timestamps.
 
@@ -55,7 +55,7 @@ Key modules:
 ```
 data/
 ├── settings.json              # api key, model ids, voice, pricing table, warn thresholds
-└── sessions/<id>/
+└── sessions/<id>/              # id = "YYYY-MM-DD HH-MM-SS" in IST (readable, 24h)
     ├── meta.json              # persona, intensity, prd, duration, usage, cost, scores
     ├── transcript.json        # [{ role: 'user'|'persona', text }]
     ├── evaluation.md          # rendered evaluation report
