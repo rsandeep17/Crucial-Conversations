@@ -1,14 +1,96 @@
-:root {
+/* ============================================================
+   Theme system. Every color is a semantic variable defined for
+   both dark and light. <html data-theme="dark|light"> is set by
+   JS (see App.tsx); the media query is a no-JS fallback.
+   ============================================================ */
+:root,
+[data-theme='dark'] {
   --bg: #0f1115;
   --panel: #1a1d24;
   --panel-2: #232833;
+  --elevated: #262c3a;
+  --elevated-hover: #2b3242;
+  --sunken: #191d26;
   --text: #e6e8ec;
+  --text-2: #c2c8d2;
   --muted: #9aa0ab;
+  --faint: #7d8494;
   --accent: #6ea8fe;
+  --accent-contrast: #0b1220;
+  --accent-soft: rgba(110, 168, 254, 0.1);
   --danger: #f0737a;
-  --user: #2d3748;
-  --persona: #1f3a2e;
+  --danger-contrast: #1a0b0d;
+  --danger-soft: rgba(240, 115, 122, 0.12);
+  --danger-text: #ffd2d5;
+  --success: #6ee7a8;
+  --success-text: #9fd3b0;
   --border: #2c313b;
+  --border-strong: #3a4150;
+  --user-bubble: #2d3748;
+  --persona-bubble: #1f3a2e;
+  --who-user: #8fb3ff;
+  --who-persona: #8fd3a8;
+}
+
+[data-theme='light'] {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #eef1f5;
+  --elevated: #ffffff;
+  --elevated-hover: #eef3fc;
+  --sunken: #f0f2f5;
+  --text: #1a1d24;
+  --text-2: #3a414d;
+  --muted: #5a6270;
+  --faint: #8a92a0;
+  --accent: #2f6fed;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(47, 111, 237, 0.08);
+  --danger: #d13b43;
+  --danger-contrast: #ffffff;
+  --danger-soft: rgba(209, 59, 67, 0.1);
+  --danger-text: #8a1e24;
+  --success: #1f9d57;
+  --success-text: #1f7d47;
+  --border: #dce1e8;
+  --border-strong: #c4ccd6;
+  --user-bubble: #dce7fb;
+  --persona-bubble: #dbf0e2;
+  --who-user: #2f6fed;
+  --who-persona: #1f9d57;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #eef1f5;
+    --elevated: #ffffff;
+    --elevated-hover: #eef3fc;
+    --sunken: #f0f2f5;
+    --text: #1a1d24;
+    --text-2: #3a414d;
+    --muted: #5a6270;
+    --faint: #8a92a0;
+    --accent: #2f6fed;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(47, 111, 237, 0.08);
+    --danger: #d13b43;
+    --danger-contrast: #ffffff;
+    --danger-soft: rgba(209, 59, 67, 0.1);
+    --danger-text: #8a1e24;
+    --success: #1f9d57;
+    --success-text: #1f7d47;
+    --border: #dce1e8;
+    --border-strong: #c4ccd6;
+    --user-bubble: #dce7fb;
+    --persona-bubble: #dbf0e2;
+    --who-user: #2f6fed;
+    --who-persona: #1f9d57;
+  }
+}
+
+:root {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 
@@ -40,15 +122,10 @@ body {
   z-index: 5;
 }
 
-.topbar h1 {
-  font-size: 18px;
-  margin: 0;
-  letter-spacing: 0.3px;
-}
-
 nav {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .nav {
@@ -67,12 +144,33 @@ nav {
   background: var(--panel);
 }
 
+.theme-toggle {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+}
+
 .screen {
   margin-top: 26px;
 }
 
 .screen h2 {
   margin: 0 0 6px;
+  color: var(--text);
+}
+
+.screen h3,
+.screen h4 {
+  color: var(--text);
 }
 
 .muted {
@@ -96,6 +194,7 @@ code {
   margin-bottom: 6px;
   font-size: 14px;
   font-weight: 600;
+  color: var(--text);
 }
 
 .field small {
@@ -104,7 +203,8 @@ code {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -146,14 +246,14 @@ select {
 
 .btn.primary {
   background: var(--accent);
-  color: #0b1220;
+  color: var(--accent-contrast);
   border-color: var(--accent);
   font-weight: 600;
 }
 
 .btn.danger {
   background: var(--danger);
-  color: #1a0b0d;
+  color: var(--danger-contrast);
   border-color: var(--danger);
   font-weight: 600;
 }
@@ -175,7 +275,7 @@ select {
 }
 
 .status-live {
-  color: #6ee7a8;
+  color: var(--success);
 }
 
 .status-connecting {
@@ -187,9 +287,9 @@ select {
 }
 
 .error-box {
-  background: rgba(240, 115, 122, 0.12);
+  background: var(--danger-soft);
   border: 1px solid var(--danger);
-  color: #ffd2d5;
+  color: var(--danger-text);
   padding: 10px 14px;
   border-radius: 8px;
   margin: 14px 0;
@@ -213,12 +313,12 @@ select {
 }
 
 .bubble.user {
-  background: var(--user);
+  background: var(--user-bubble);
   align-self: flex-end;
 }
 
 .bubble.persona {
-  background: var(--persona);
+  background: var(--persona-bubble);
   align-self: flex-start;
 }
 
@@ -236,6 +336,7 @@ select {
 .bubble .what {
   font-size: 15px;
   line-height: 1.4;
+  color: var(--text);
 }
 
 /* Brand button */
@@ -268,8 +369,8 @@ select {
   flex-direction: column;
   gap: 8px;
   text-align: left;
-  background: #232834;
-  border: 1px solid #3a4150;
+  background: var(--sunken);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
   padding: 20px;
   cursor: pointer;
@@ -277,23 +378,21 @@ select {
   transition: border-color 0.12s, background 0.12s, transform 0.12s;
 }
 
-/* Available (clickable) cards get an accent edge so they read as the action. */
 .card:not(.card-disabled) {
-  background: #262c3a;
-  border-color: #4a5266;
+  background: var(--elevated);
+  border-color: var(--border-strong);
   border-left: 3px solid var(--accent);
 }
 
 .card:not(.card-disabled):hover {
   border-color: var(--accent);
-  background: #2b3242;
+  background: var(--elevated-hover);
   transform: translateY(-2px);
 }
 
 .card-disabled {
-  opacity: 0.9;
-  background: #191d26;
-  border-color: #2c313b;
+  background: var(--sunken);
+  border-color: var(--border);
   cursor: default;
 }
 
@@ -304,18 +403,18 @@ select {
 }
 
 .card-disabled .card-title {
-  color: #8b93a3;
-  padding-right: 96px; /* leave room for the COMING SOON badge */
+  color: var(--faint);
+  padding-right: 96px; /* room for the COMING SOON badge */
 }
 
 .card-blurb {
   font-size: 13.5px;
-  color: #c2c8d2;
+  color: var(--text-2);
   line-height: 1.45;
 }
 
 .card-disabled .card-blurb {
-  color: #7d8494;
+  color: var(--faint);
 }
 
 .badge {
@@ -325,22 +424,15 @@ select {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #aeb6c4;
-  background: #2c313b;
-  border: 1px solid #3a4150;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
   padding: 3px 7px;
   border-radius: 20px;
 }
 
 /* PRD textarea */
 textarea.prd-input {
-  width: 100%;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   line-height: 1.5;
   resize: vertical;
@@ -378,6 +470,7 @@ textarea.prd-input {
 .persona-name {
   font-weight: 600;
   font-size: 14px;
+  color: var(--text);
 }
 
 .persona-title {
@@ -415,6 +508,7 @@ textarea.prd-input {
   padding: 10px 14px;
   cursor: pointer;
   min-width: 150px;
+  color: var(--text);
 }
 
 .chip.selected {
@@ -473,6 +567,21 @@ textarea.prd-input {
   font-size: 20px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  color: var(--text);
+}
+
+.meter-value.over {
+  color: var(--danger);
+}
+
+.warn-banner {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--danger-text);
+  margin: 12px 0;
 }
 
 /* Summary tiles */
@@ -504,6 +613,11 @@ textarea.prd-input {
   font-size: 26px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.tile-value.small {
+  font-size: 18px;
 }
 
 .cost-breakdown,
@@ -520,6 +634,7 @@ textarea.prd-input {
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
+  color: var(--text);
 }
 
 .mini-table {
@@ -529,20 +644,40 @@ textarea.prd-input {
   font-size: 13px;
 }
 
-.mini-table td {
-  padding: 4px 0;
+.mini-table th {
+  text-align: left;
   color: var(--muted);
+  font-weight: 600;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
 }
 
-.mini-table td:last-child {
+.mini-table th.num,
+.mini-table td.num {
   text-align: right;
-  color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.mini-table td {
+  padding: 5px 0;
+  color: var(--text-2);
+}
+
+.mini-table td.num {
+  color: var(--text);
+}
+
+.mini-table tr.total td {
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  color: var(--text);
+  padding-top: 8px;
 }
 
 .save-state {
   font-size: 13px;
   margin: 10px 0;
+  color: var(--muted);
 }
 
 .error-inline {
@@ -555,7 +690,7 @@ textarea.prd-input {
 }
 
 .eval-placeholder {
-  background: rgba(110, 168, 254, 0.08);
+  background: var(--accent-soft);
   border: 1px dashed var(--accent);
   border-radius: 8px;
   padding: 12px 14px;
@@ -564,25 +699,38 @@ textarea.prd-input {
   margin: 16px 0;
 }
 
-.meter-value.over {
-  color: var(--danger);
-}
-
-.warn-banner {
-  background: rgba(240, 115, 122, 0.12);
-  border: 1px solid var(--danger);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 14px;
-  color: #ffd2d5;
+/* Evaluation progress (while the eval call runs) */
+.eval-progress {
   margin: 12px 0;
 }
 
-.tile-value.small {
-  font-size: 18px;
+.progress-track {
+  height: 8px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
 }
 
-/* Evaluation */
+.progress-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 4px;
+  background: var(--accent);
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+
+.progress-msg {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* Evaluation content */
 .eval {
   margin: 24px 0;
   border-top: 1px solid var(--border);
@@ -602,6 +750,7 @@ textarea.prd-input {
 .eval-summary {
   font-size: 16px;
   line-height: 1.5;
+  color: var(--text);
 }
 
 .scores {
@@ -641,6 +790,7 @@ textarea.prd-input {
   font-size: 13px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
 .eval-list {
@@ -649,16 +799,9 @@ textarea.prd-input {
 }
 
 .eval-list li {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   line-height: 1.5;
-}
-
-.eval-list blockquote {
-  margin: 6px 0;
-  padding-left: 12px;
-  border-left: 3px solid var(--border);
-  color: var(--muted);
-  font-style: italic;
+  color: var(--text);
 }
 
 .point-head {
@@ -672,9 +815,22 @@ textarea.prd-input {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   padding: 1px 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ts-chip:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.ts-chip::before {
+  content: '▶ ';
+  font-size: 8px;
 }
 
 .exchange {
@@ -689,7 +845,7 @@ textarea.prd-input {
 .ex-line {
   font-size: 13.5px;
   line-height: 1.45;
-  color: #c2c8d2;
+  color: var(--text-2);
   font-style: italic;
 }
 
@@ -704,30 +860,52 @@ textarea.prd-input {
 }
 
 .ex-user .ex-who {
-  color: #8fb3ff;
+  color: var(--who-user);
 }
 
 .ex-persona .ex-who {
-  color: #8fd3a8;
+  color: var(--who-persona);
+}
+
+.pattern {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.end-note {
+  font-size: 14px;
+  color: var(--text-2);
+  margin: 6px 0 0;
+}
+
+.end-note.warn {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 8px 12px;
 }
 
 .eval-list .better {
   margin-top: 6px;
   font-size: 14px;
-  color: #9fd3b0;
+  color: var(--success-text);
 }
 
 .bubble-ts {
   margin-left: 8px;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  opacity: 0.8;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 0;
 }
 
-@media (max-width: 520px) {
-  .score-row {
-    grid-template-columns: 120px 1fr 36px;
-  }
+.bubble-ts:hover {
+  text-decoration: underline;
 }
 
 .checkbox-field {
@@ -737,6 +915,7 @@ textarea.prd-input {
   margin: 18px 0;
   font-size: 14px;
   font-weight: 600;
+  color: var(--text);
 }
 
 .checkbox-field input {
@@ -757,5 +936,8 @@ textarea.prd-input {
 @media (max-width: 520px) {
   .two-col {
     grid-template-columns: 1fr;
+  }
+  .score-row {
+    grid-template-columns: 120px 1fr 36px;
   }
 }

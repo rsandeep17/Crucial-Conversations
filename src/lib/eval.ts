@@ -16,6 +16,9 @@ export type ScoreKey = (typeof SCORE_DIMENSIONS)[number]['key'];
 
 /** One feedback point, anchored to the actual exchange so it's recallable. */
 export interface FeedbackPoint {
+  /** A short, memorable name for the pattern, e.g. "Hand-waving complexity". */
+  pattern?: string;
+  /** A detailed explanation: what you did, why it landed badly, what the tell was. */
   point: string;
   /** The persona's line the PM was responding to (verbatim, short). */
   personaQuote?: string;
@@ -70,13 +73,24 @@ const RESPONSE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          point: { type: 'string' },
+          pattern: {
+            type: 'string',
+            description:
+              'A short, memorable NAME for this mistake pattern (3-6 words) the PM can recognize next ' +
+              'time, e.g. "Hand-waving complexity", "Conceding too fast", "Answering a different question".',
+          },
+          point: {
+            type: 'string',
+            description:
+              'A detailed explanation (3-5 sentences): what the PM actually did, WHY it damaged their ' +
+              'position or credibility, and what the tell/trigger was so they can catch it happening again.',
+          },
           personaQuote: { type: 'string', description: "The persona's line the PM was responding to (verbatim, short)." },
           userQuote: { type: 'string', description: "The PM's actual words at the weak moment (verbatim, short)." },
           timestamp: { type: 'string', description: 'Approx [mm:ss] timestamp from the transcript.' },
-          better: { type: 'string', description: 'What a stronger response would have sounded like.' },
+          better: { type: 'string', description: 'A concrete stronger response for that exact moment (a sentence or two the PM could have said).' },
         },
-        required: ['point'],
+        required: ['pattern', 'point'],
       },
     },
     practiceNext: { type: 'string', description: 'The single most valuable thing to work on next.' },
@@ -135,8 +149,11 @@ export async function evaluateSession(params: {
       'recall it. For each point, fill in: personaQuote (the reviewer line the PM was responding to), ' +
       'userQuote (the PM\'s own verbatim words), and timestamp (the [mm:ss] from the transcript). Quote ' +
       'verbatim — never invent words that were not said.\n' +
-      '- For each weakness (wentWrong), also fill in `better`: a concrete, specific example of what a ' +
-      'stronger response in that exact moment would have sounded like.\n' +
+      '- For each weakness (wentWrong): give it a short memorable `pattern` NAME the PM can recognize ' +
+      'again (e.g. "Hand-waving complexity"), then a DETAILED `point` (3-5 sentences) explaining exactly ' +
+      'what they did, WHY it hurt their credibility or position, and the tell/trigger to watch for next ' +
+      'time — the goal is that they can catch this pattern in a future conversation. Then `better`: a ' +
+      'concrete stronger response for that exact moment. Depth here matters more than brevity.\n' +
       '- Be honest. If the conversation was short or weak, say so and score accordingly.\n' +
       '- practiceNext should name the single highest-leverage improvement.\n' +
       '- followUps should be 2-3 specific next challenges (e.g., "Re-run with the Hostile intensity and ' +
@@ -183,7 +200,8 @@ export function reportToMarkdown(report: EvalReport): string {
     lines.push(`- **${d.label}:** ${report.scores[d.key]}/5`);
   }
   const renderPoint = (w: FeedbackPoint): string => {
-    const bits: string[] = [`- ${w.timestamp ? `[${w.timestamp}] ` : ''}${w.point}`];
+    const head = `- ${w.timestamp ? `[${w.timestamp}] ` : ''}${w.pattern ? `**${w.pattern}** — ` : ''}${w.point}`;
+    const bits: string[] = [head];
     if (w.personaQuote) bits.push(`  - Persona: "${w.personaQuote}"`);
     if (w.userQuote) bits.push(`  - You: "${w.userQuote}"`);
     if (w.better) bits.push(`  - Stronger: ${w.better}`);

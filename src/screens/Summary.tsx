@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationResult } from '../lib/conversation';
-import { liveCost, evalCost, formatUsd, formatDuration, type EvalUsage } from '../lib/cost';
+import { liveCost, evalCost, formatInr, formatDuration, type EvalUsage } from '../lib/cost';
 import { SCORE_DIMENSIONS, type EvalReport } from '../lib/eval';
 import type { SessionConfig } from '../personas/personas';
 import type { Settings } from '../lib/settings';
@@ -10,6 +10,25 @@ export interface EvalState {
   report?: EvalReport;
   usage?: EvalUsage;
   message?: string;
+}
+
+const EVAL_MESSAGES = [
+  'Listening back to your delivery…',
+  'Reading the transcript against your PRD…',
+  'Scoring clarity, composure, and how you handled pushback…',
+  'Finding the exact moments that mattered…',
+  'Writing up what to practice next…',
+];
+
+/** Parse "m:ss" or "h:mm:ss" (or a plain number) into seconds. */
+function parseTimestamp(ts?: string | number): number | null {
+  if (ts == null) return null;
+  if (typeof ts === 'number') return ts;
+  const parts = ts.trim().split(':').map(Number);
+  if (parts.some(Number.isNaN)) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
 }
 
 export function Summary({
@@ -30,6 +49,29 @@ export function Summary({
   onPracticeAgain: () => void;
 }) {
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
+  const [progressMsg, setProgressMsg] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // MediaRecorder .webm blobs often report duration=Infinity, which blocks
+  // seeking. Nudge the browser to compute the real duration once loaded.
+  const fixDuration = () => {
+    const a = audioRef.current;
+    if (!a || (a.duration !== Infinity && !Number.isNaN(a.duration))) return;
+    const onUpdate = () => {
+      a.currentTime = 0;
+      a.removeEventListener('timeupdate', onUpdate);
+    };
+    a.addEventListener('timeupdate', onUpdate);
+    a.currentTime = 1e101; // forces the browser to scan to the end
+  };
+
+  const seekTo = (seconds: number | null) => {
+    const a = audioRef.current;
+    if (!a || seconds == null) return;
+    a.currentTime = seconds;
+    a.play().catch(() => {});
+    a.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   useEffect(() => {
     if (!result.recording) return;
@@ -38,6 +80,13 @@ export function Summary({
     return () => URL.revokeObjectURL(url);
   }, [result.recording]);
 
+  // Rotate encouraging status messages while the evaluation runs.
+  useEffect(() => {
+    if (evalState.status !== 'running') return;
+    const id = setInterval(() => setProgressMsg((i) => (i + 1) % EVAL_MESSAGES.length), 2600);
+    return () => clearInterval(id);
+  }, [evalState.status]);
+
   const liveCostVal = useMemo(() => liveCost(result.usage, settings.pricing), [result.usage, settings.pricing]);
   const evalCostVal = useMemo(
     () => (evalState.usage ? evalCost(evalState.usage, settings.pricing) : 0),
@@ -45,6 +94,24 @@ export function Summary({
   );
   const totalCost = liveCostVal + evalCostVal;
   const report = evalState.report;
+  const rate = settings.usdToInr;
+  const p = settings.pricing;
+  const u = result.usage;
+
+  // Per-line cost rows for the breakdown (USD, converted to ₹ on render).
+  const costRows: { label: string; tokens: number; usd: number }[] = [
+    { label: 'Voice · audio in', tokens: u.inputAudioTokens, usd: (u.inputAudioTokens * p.liveAudioInput) / 1e6 },
+    { label: 'Voice · audio out', tokens: u.outputAudioTokens, usd: (u.outputAudioTokens * p.liveAudioOutput) / 1e6 },
+    {
+      label: 'Voice · text',
+      tokens: u.inputTextTokens + u.outputTextTokens,
+      usd: (u.inputTextTokens * p.liveTextInput + u.outputTextTokens * p.liveTextOutput) / 1e6,
+    },
+  ];
+  if (evalState.usage) {
+    costRows.push({ label: 'Eval · input', tokens: evalState.usage.inputTokens, usd: (evalState.usage.inputTokens * p.evalInput) / 1e6 });
+    costRows.push({ label: 'Eval · output', tokens: evalState.usage.outputTokens, usd: (evalState.usage.outputTokens * p.evalOutput) / 1e6 });
+  }
 
   return (
     <div className="screen">
@@ -52,6 +119,15 @@ export function Summary({
       <p className="muted">
         {config.persona.name} · {config.persona.title} · {config.intensity}
       </p>
+      {result.endedBy === 'persona' && (
+        <p className="end-note">🧑‍⚖️ {config.persona.name} wrapped up the meeting when they felt they'd made their point.</p>
+      )}
+      {result.endedBy === 'disconnect' && (
+        <p className="end-note warn">
+          ⚠︎ The live connection dropped, so the session was saved up to that point. This can happen on a
+          network blip or the Live API's session limit.
+        </p>
+      )}
 
       <div className="summary-tiles">
         <div className="tile">
@@ -60,12 +136,12 @@ export function Summary({
         </div>
         <div className="tile">
           <span className="tile-label">Total cost</span>
-          <span className="tile-value">{formatUsd(totalCost)}</span>
+          <span className="tile-value">{formatInr(totalCost, rate)}</span>
         </div>
         <div className="tile">
           <span className="tile-label">Voice / Eval</span>
           <span className="tile-value small">
-            {formatUsd(liveCostVal)} / {formatUsd(evalCostVal)}
+            {formatInr(liveCostVal, rate)} / {formatInr(evalCostVal, rate)}
           </span>
         </div>
       </div>
@@ -80,7 +156,12 @@ export function Summary({
       <section className="eval">
         <h3>Evaluation</h3>
         {evalState.status === 'running' && (
-          <p className="muted">Analyzing your performance with {settings.evalModel}…</p>
+          <div className="eval-progress">
+            <div className="progress-track">
+              <div className="progress-fill" />
+            </div>
+            <p className="progress-msg">{EVAL_MESSAGES[progressMsg]}</p>
+          </div>
         )}
         {evalState.status === 'error' && (
           <div className="error-box">Evaluation failed: {evalState.message}</div>
@@ -109,8 +190,19 @@ export function Summary({
               {report.wentWell.map((w, i) => (
                 <li key={i}>
                   <div className="point-head">
-                    {w.timestamp && <span className="ts-chip">{w.timestamp}</span>}
-                    {w.point}
+                    {w.timestamp && (
+                      <button
+                        className="ts-chip"
+                        onClick={() => seekTo(parseTimestamp(w.timestamp))}
+                        title="Play the recording from here"
+                      >
+                        {w.timestamp}
+                      </button>
+                    )}
+                    <span>
+                      {w.pattern && <strong className="pattern">{w.pattern} — </strong>}
+                      {w.point}
+                    </span>
                   </div>
                   {(w.personaQuote || w.userQuote) && (
                     <div className="exchange">
@@ -135,8 +227,19 @@ export function Summary({
               {report.wentWrong.map((w, i) => (
                 <li key={i}>
                   <div className="point-head">
-                    {w.timestamp && <span className="ts-chip">{w.timestamp}</span>}
-                    {w.point}
+                    {w.timestamp && (
+                      <button
+                        className="ts-chip"
+                        onClick={() => seekTo(parseTimestamp(w.timestamp))}
+                        title="Play the recording from here"
+                      >
+                        {w.timestamp}
+                      </button>
+                    )}
+                    <span>
+                      {w.pattern && <strong className="pattern">{w.pattern} — </strong>}
+                      {w.point}
+                    </span>
                   </div>
                   {(w.personaQuote || w.userQuote) && (
                     <div className="exchange">
@@ -172,24 +275,46 @@ export function Summary({
 
       {recordingUrl && (
         <div className="field">
-          <span>Recording</span>
-          <audio controls src={recordingUrl} className="audio-player" />
+          <span>Recording {report && '— click any timestamp above to jump here'}</span>
+          <audio
+            ref={audioRef}
+            controls
+            src={recordingUrl}
+            className="audio-player"
+            onLoadedMetadata={fixDuration}
+          />
         </div>
       )}
 
       <details className="cost-breakdown">
         <summary>Cost breakdown (estimate)</summary>
         <table className="mini-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th className="num">Tokens</th>
+              <th className="num">Cost</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr><td>Voice — audio in</td><td>{result.usage.inputAudioTokens.toLocaleString()} tok</td></tr>
-            <tr><td>Voice — audio out</td><td>{result.usage.outputAudioTokens.toLocaleString()} tok</td></tr>
-            <tr><td>Voice — text in/out</td><td>{(result.usage.inputTextTokens + result.usage.outputTextTokens).toLocaleString()} tok</td></tr>
-            {evalState.usage && (
-              <tr><td>Eval — in/out</td><td>{(evalState.usage.inputTokens + evalState.usage.outputTokens).toLocaleString()} tok</td></tr>
-            )}
+            {costRows.map((r) => (
+              <tr key={r.label}>
+                <td>{r.label}</td>
+                <td className="num">{r.tokens.toLocaleString()}</td>
+                <td className="num">{formatInr(r.usd, rate)}</td>
+              </tr>
+            ))}
+            <tr className="total">
+              <td>Total</td>
+              <td className="num">{u.totalTokens.toLocaleString()}</td>
+              <td className="num">{formatInr(totalCost, rate)}</td>
+            </tr>
           </tbody>
         </table>
-        <small className="muted">Estimate from usage metadata × your pricing table. Cloud billing is authoritative.</small>
+        <small className="muted">
+          Estimate from usage metadata × your pricing table, converted at ₹{rate}/$. Cloud billing is
+          authoritative.
+        </small>
       </details>
 
       <details className="transcript-details">
@@ -199,7 +324,11 @@ export function Summary({
             <div key={i} className={`bubble ${t.role}`}>
               <span className="who">
                 {t.role === 'user' ? 'You' : config.persona.name}
-                {t.ts != null && <span className="bubble-ts">{formatDuration(t.ts)}</span>}
+                {t.ts != null && (
+                  <button className="bubble-ts" onClick={() => seekTo(t.ts ?? null)} title="Play from here">
+                    {formatDuration(t.ts)}
+                  </button>
+                )}
               </span>
               <span className="what">{t.text}</span>
             </div>

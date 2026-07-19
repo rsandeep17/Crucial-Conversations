@@ -20,6 +20,7 @@ export interface SessionMeta {
   scenarioNote?: string;
   prd: string;
   durationSec: number;
+  endedBy?: 'user' | 'persona' | 'disconnect';
   usage: { live: LiveUsage; eval?: EvalUsage };
   cost: { live: number; eval?: number; total: number };
   scores?: Record<ScoreKey, number>;

@@ -28,6 +28,16 @@ export function App() {
   const [result, setResult] = useState<ConversationResult | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ status: 'saving' });
   const [evalState, setEvalState] = useState<EvalState>({ status: 'running' });
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     loadSettings()
@@ -53,6 +63,7 @@ export function App() {
       scenarioNote: c.scenarioNote,
       prd: c.prd,
       durationSec: r.durationSec,
+      endedBy: r.endedBy,
       usage: { live: r.usage },
       cost: { live: liveCostVal, total: liveCostVal },
     };
@@ -129,6 +140,13 @@ export function App() {
             onClick={() => setView('settings')}
           >
             Settings
+          </button>
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? '☀︎' : '☾'}
           </button>
         </nav>
       </header>

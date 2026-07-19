@@ -15,7 +15,11 @@ export interface ConversationCallbacks {
   onError?: (message: string) => void;
   /** The persona chose to wrap up the meeting; the screen should end gracefully. */
   onEndRequested?: () => void;
+  /** The connection dropped unexpectedly; the screen should finalize what we have. */
+  onDisconnected?: () => void;
 }
+
+export type EndedBy = 'user' | 'persona' | 'disconnect';
 
 export interface ConversationResult {
   transcript: Turn[];
@@ -24,6 +28,7 @@ export interface ConversationResult {
   recording: Blob | null;
   /** The user's own speech as WAV, for the evaluator to assess delivery. */
   userAudio: Blob | null;
+  endedBy: EndedBy;
 }
 
 /**
@@ -42,6 +47,8 @@ export class Conversation {
   private buffers = { user: '', persona: '' };
   private bufferStart = { user: 0, persona: 0 };
   private startMs = 0;
+  private stopped = false; // guards against a stop() that races an in-flight start()
+  private endedBy: EndedBy = 'user';
 
   constructor(
     private readonly config: SessionConfig,
@@ -70,11 +77,18 @@ export class Conversation {
           this.cb.onStatus?.('live');
         },
         onError: (m) => {
+          console.warn('[live] error:', m);
           this.cb.onError?.(m);
           this.cb.onStatus?.('error');
         },
         onClose: (reason) => {
-          if (reason && reason !== 'closed') this.cb.onError?.(`Connection closed: ${reason}`);
+          console.warn('[live] connection closed:', reason);
+          // If we're already tearing down (user ended / persona wrapped up), a
+          // close is expected — ignore. Otherwise the socket dropped mid-call;
+          // finalize what we have so the session and its evaluation aren't lost.
+          if (this.stopped) return;
+          this.endedBy = 'disconnect';
+          this.cb.onDisconnected?.();
         },
         onAudio: (b64) => this.streamer?.enqueue(b64),
         onInterrupted: () => this.streamer?.flush(),
@@ -96,10 +110,21 @@ export class Conversation {
     });
     this.session = session;
     await session.connect();
+    // If stop() was called while connecting (e.g. the screen unmounted), don't
+    // leave an orphaned session running and billing — close it now and bail.
+    if (this.stopped) {
+      session.close();
+      return;
+    }
 
     const recorder = new AudioRecorder();
     await recorder.start((b64) => this.session?.sendAudio(b64));
     this.recorder = recorder;
+    if (this.stopped) {
+      await recorder.stop();
+      session.close();
+      return;
+    }
 
     // Now that mic + playback contexts exist, mix them into one recording.
     if (recorder.micStream) {
@@ -108,7 +133,7 @@ export class Conversation {
         streamer.outputNode,
         recorder.micStream,
       );
-      this.sessionRecorder.start();
+      await this.sessionRecorder.start();
     }
   }
 
@@ -132,14 +157,17 @@ export class Conversation {
     return this.startMs ? (performance.now() - this.startMs) / 1000 : 0;
   }
 
-  async stop(graceful = false): Promise<ConversationResult> {
+  async stop(endedBy: EndedBy = 'user'): Promise<ConversationResult> {
+    this.stopped = true;
+    if (this.endedBy !== 'disconnect') this.endedBy = endedBy;
+    const graceful = endedBy === 'persona';
     const durationSec = this.durationSec;
     // When the persona wraps up, let its closing remark finish playing (and be
     // recorded) before we tear everything down.
     if (graceful) await this.streamer?.waitForDrain();
     // Finalize the recording first, while the mic and playback are still live,
     // so the tail of the conversation is captured.
-    const recording = (await this.sessionRecorder?.stop()) ?? null;
+    const recording = this.sessionRecorder?.stop() ?? null;
     const userAudio = this.recorder?.buildUserAudioWav() ?? null;
     await this.recorder?.stop();
     this.session?.close();
@@ -152,6 +180,7 @@ export class Conversation {
       durationSec,
       recording,
       userAudio,
+      endedBy: this.endedBy,
     };
 
     this.recorder = null;

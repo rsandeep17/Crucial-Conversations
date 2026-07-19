@@ -38,6 +38,8 @@ const DEFAULT_SETTINGS = {
   warnMinutes: 10,
   // Send the user's spoken audio to the evaluator so delivery/tone is judged.
   evalUseAudio: true,
+  // USD→INR rate for showing cost in rupees (editable in Settings).
+  usdToInr: 85,
 };
 
 async function ensureDataDir(): Promise<void> {
@@ -75,10 +77,11 @@ async function createSession(body: string): Promise<{ id: string }> {
   return { id };
 }
 
-async function saveRecording(id: string, data: Buffer): Promise<void> {
+async function saveRecording(id: string, data: Buffer, contentType: string): Promise<void> {
   const dir = path.join(SESSIONS_DIR, id);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, 'recording.webm'), data);
+  const ext = contentType.includes('wav') ? 'wav' : contentType.includes('webm') ? 'webm' : 'audio';
+  await fs.writeFile(path.join(dir, `recording.${ext}`), data);
 }
 
 async function updateSession(id: string, body: string): Promise<unknown> {
@@ -172,7 +175,7 @@ const handler: Connect.NextHandleFunction = (req, res, next) => {
       const recMatch = url.match(/^\/api\/sessions\/([^/]+)\/recording$/);
       if (recMatch && req.method === 'PUT') {
         const data = await readRawBody(req);
-        await saveRecording(decodeURIComponent(recMatch[1]), data);
+        await saveRecording(decodeURIComponent(recMatch[1]), data, req.headers['content-type'] ?? '');
         return sendJson(res, 200, { ok: true });
       }
       const updMatch = url.match(/^\/api\/sessions\/([^/]+)$/);

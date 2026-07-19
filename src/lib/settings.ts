@@ -18,6 +18,8 @@ export interface Settings {
   warnMinutes: number;
   /** Send the user's spoken audio to the evaluator (assesses delivery/tone). */
   evalUseAudio: boolean;
+  /** USD→INR conversion rate for displaying cost in rupees. */
+  usdToInr: number;
 }
 
 export async function loadSettings(): Promise<Settings> {

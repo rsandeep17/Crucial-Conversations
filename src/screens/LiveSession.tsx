@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Conversation, type ConversationResult, type ConversationStatus } from '../lib/conversation';
-import { EMPTY_USAGE_DISPLAY, liveCost, formatUsd, formatDuration, type LiveUsage } from '../lib/cost';
+import {
+  Conversation,
+  type ConversationResult,
+  type ConversationStatus,
+  type EndedBy,
+} from '../lib/conversation';
+import { EMPTY_USAGE_DISPLAY, liveCost, formatInr, formatDuration, type LiveUsage } from '../lib/cost';
 import type { SessionConfig } from '../personas/personas';
 import type { Settings } from '../lib/settings';
 import type { Turn } from '../lib/sessionStore';
@@ -24,10 +29,10 @@ export function LiveSession({
   const convRef = useRef<Conversation | null>(null);
   const endingRef = useRef(false);
 
-  const finish = async (graceful: boolean) => {
+  const finish = async (endedBy: EndedBy) => {
     if (endingRef.current || !convRef.current) return;
     endingRef.current = true;
-    const result = await convRef.current.stop(graceful);
+    const result = await convRef.current.stop(endedBy);
     onEnd(result);
   };
   const finishRef = useRef(finish);
@@ -42,7 +47,8 @@ export function LiveSession({
         setLive({ user: u, persona: p });
       },
       onUsage: setUsage,
-      onEndRequested: () => void finishRef.current(true),
+      onEndRequested: () => void finishRef.current('persona'),
+      onDisconnected: () => void finishRef.current('disconnect'),
     });
     convRef.current = conv;
     conv.start().catch((e) => {
@@ -85,7 +91,7 @@ export function LiveSession({
           </div>
           <div className="meter">
             <span className="meter-label">Est. cost</span>
-            <span className={`meter-value ${overCost ? 'over' : ''}`}>{formatUsd(cost)}</span>
+            <span className={`meter-value ${overCost ? 'over' : ''}`}>{formatInr(cost, settings.usdToInr)}</span>
           </div>
           <span className={`status status-${status}`}>{status}</span>
         </div>
@@ -96,13 +102,13 @@ export function LiveSession({
       {over && status === 'live' && (
         <div className="warn-banner">
           You're past your {overCost ? 'cost' : 'time'} target
-          {overCost ? ` (${formatUsd(settings.warnCostUsd)})` : ` (${settings.warnMinutes} min)`}. Wrap up when
-          it's natural — no rush, just a heads-up.
+          {overCost ? ` (${formatInr(settings.warnCostUsd, settings.usdToInr)})` : ` (${settings.warnMinutes} min)`}.
+          Wrap up when it's natural — no rush, just a heads-up.
         </div>
       )}
 
       <div className="controls">
-        <button className="btn danger" onClick={() => void finish(false)}>
+        <button className="btn danger" onClick={() => void finish('user')}>
           End conversation
         </button>
         {status === 'connecting' && <span className="muted">Connecting… allow microphone access.</span>}

@@ -35,7 +35,7 @@ Key modules:
 | `src/lib/conversation.ts` | Orchestrates one session: mic capture, playback, recording, transcript buffering, usage tracking. The screens use this. |
 | `src/lib/audio/AudioRecorder.ts` | Mic capture → 16 kHz PCM via an AudioWorklet (`public/worklets/pcm-recorder-processor.js`). |
 | `src/lib/audio/AudioStreamer.ts` | Plays the model's 24 kHz PCM output; flushes on barge-in. |
-| `src/lib/audio/SessionRecorder.ts` | Mixes mic + model audio into one `.webm` via MediaRecorder (client-side, no API cost). |
+| `src/lib/audio/SessionRecorder.ts` | Taps the mixed audio graph with an AudioWorklet → **seekable `.wav`** (client-side, no API cost). WAV, not MediaRecorder `.webm`, so the player can jump to any timestamp. |
 | `src/lib/cost.ts` | Token→USD math + `LiveUsageTracker` (handles cumulative usage metadata). |
 | `src/lib/sessionStore.ts` | Client for saving sessions to `/api/sessions`. |
 | `src/personas/personas.ts` | The 5 personas + intensity modifiers + `buildSystemInstruction()`. |
@@ -59,7 +59,7 @@ data/
     ├── meta.json              # persona, intensity, prd, duration, usage, cost, scores
     ├── transcript.json        # [{ role: 'user'|'persona', text }]
     ├── evaluation.md          # rendered evaluation report
-    └── recording.webm         # mixed conversation audio
+    └── recording.wav          # mixed conversation audio (seekable WAV)
 ```
 `data/` is git-ignored (it contains your API key and recordings).
 
@@ -69,6 +69,13 @@ data/
 - **Evaluation:** `gemini-3.5-flash` (configurable in Settings), one `generateContent` call per session with a JSON-schema structured response.
 - **Pricing table** (USD per 1M tokens, editable in Settings; defaults from ai.google.dev pricing, July 2026): live audio in $3 / out $12, text in $0.75 / out $4.50; eval in $1.50 / out $9.
 - Cost shown in-app is an **estimate** derived from the Live API's `usageMetadata`. **Important billing mechanic:** the Live API re-bills the full cumulative context every turn (prior audio is kept as tokens), and each server message is a per-turn snapshot — so the app **sums every snapshot's per-modality tokens** (`LiveUsageTracker` in `src/lib/cost.ts`). Summing matches Cloud billing within ~a few percent; taking the max/last value undercounts by ~2-4x (that was a real early bug). Eval audio input is billed at the normal input rate (~$0.003/min). **Google Cloud billing is authoritative.**
+- **Cost is displayed in ₹ (INR)** via a `usdToInr` rate in Settings (default 85). The summary's cost-breakdown accordion shows tokens **and** ₹ cost per line (voice audio in/out, voice text, eval in/out) plus a total.
+
+## UI / theming
+
+- **Light and dark themes**, driven by `<html data-theme>` set in `App.tsx` (persisted to `localStorage`, defaults to the OS `prefers-color-scheme`). A toggle sits in the top bar. All colors are semantic CSS variables defined for both themes in `src/styles.css` — never hardcode a hex in a component; add/extend a variable.
+- While the evaluation runs, the summary shows an animated progress bar with rotating status messages.
+- In the report, every feedback point's **timestamp is a button** that seeks the session recording and plays from that moment (a duration-fix nudge works around MediaRecorder `.webm` files not reporting duration). Transcript turn timestamps are clickable the same way.
 
 ## Status
 
@@ -81,8 +88,9 @@ data/
 ## Known limitations (today)
 
 - **Pricing table has no in-app editor yet.** Rates ship with correct defaults and are read from `data/settings.json`; to change them, hand-edit that file (or add a Settings UI). Warn thresholds (cost/minutes) ARE editable in Settings.
-- **No reconnection.** The Live API caps audio sessions (~15 min) and will close the socket; resumption handles are captured but reconnection isn't implemented yet (M6). If the socket closes on its own, the session is **not** auto-saved or evaluated.
+- **No reconnection yet.** The Live API caps audio sessions (~15 min) and will close the socket; resumption handles are captured but reconnection isn't implemented yet (M6). However, an unexpected close now **auto-finalizes** the session (saves + evaluates what we have, marked `endedBy: 'disconnect'`) rather than losing it. `StrictMode` is intentionally OFF (`main.tsx`) because its dev double-mount raced the async Live connect and left an orphaned, still-billing session — the root cause of a spurious "operation was aborted" banner + inflated cost.
 - **Evaluation quality is unproven on real transcripts** — the prompt/rubric exists and is structured, but hasn't been run against an actual live session yet.
 - **Auto-start on connect** relies on the browser carrying the Setup click through the screen transition; if the persona ever fails to start talking, an explicit "Begin" button is the fix.
-- **UI is functional, not polished** — a design pass is deferred.
+- **Clickable-timestamp seeking** now uses a seekable WAV recording (was flaky on webm). Report/transcript timestamps seek the player and play from there. Alignment is approximate (recording starts a beat after the session clock).
 - **PRD input is paste-only** (no PDF/docx upload yet).
+- **No in-app pricing-table editor** — rates live in `data/settings.json` (defaults correct); the `usdToInr`, warn thresholds, and audio-eval toggle ARE editable in Settings.

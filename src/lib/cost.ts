@@ -84,6 +84,14 @@ export function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+/** Format a USD amount as Indian rupees using the given conversion rate. */
+export function formatInr(usd: number, rate: number): string {
+  const inr = usd * rate;
+  if (inr === 0) return '₹0.00';
+  if (inr < 0.1) return `₹${inr.toFixed(3)}`;
+  return `₹${inr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);

@@ -1,18 +1,25 @@
+import { concatInt16, int16ToWavBlob } from './pcm';
+
 /**
  * Records the whole conversation — your mic plus the model's voice — into a
- * single mixed .webm file, entirely client-side (no API cost).
+ * single mixed WAV, entirely client-side (no API cost).
  *
- * Both sources are mixed inside the playback AudioContext: the model's output
- * GainNode is tapped, and the mic MediaStream is added as a second source.
- * They fan into one MediaStreamAudioDestinationNode, which MediaRecorder
- * captures as a single track. (24 kHz model buffers resample to the context
- * rate automatically, so mixing across the original rates is not a problem.)
+ * We tap the mixed audio graph with an AudioWorklet and accumulate raw PCM,
+ * then write a WAV on stop. WAV (unlike MediaRecorder's .webm) is linear PCM,
+ * so the player can seek to any timestamp reliably — which powers the
+ * click-a-timestamp-to-jump feature. MediaRecorder .webm files from the
+ * browser usually lack seeking cues and report an unknown duration.
+ *
+ * The model's 24 kHz output and the mic (resampled by the context) are summed
+ * into a gain node, tapped by the worklet, and routed on to a muted node so
+ * the graph stays "live" and the worklet keeps processing.
  */
 export class SessionRecorder {
-  private recorder: MediaRecorder | null = null;
-  private chunks: Blob[] = [];
-  private mixDest: MediaStreamAudioDestinationNode | null = null;
+  private mixGain: GainNode | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
+  private worklet: AudioWorkletNode | null = null;
+  private silentSink: GainNode | null = null;
+  private pcmChunks: Int16Array[] = [];
 
   constructor(
     private readonly context: AudioContext,
@@ -20,43 +27,52 @@ export class SessionRecorder {
     private readonly micStream: MediaStream,
   ) {}
 
-  start(): void {
-    this.mixDest = this.context.createMediaStreamDestination();
-    this.modelOutput.connect(this.mixDest);
-    this.micSource = this.context.createMediaStreamSource(this.micStream);
-    this.micSource.connect(this.mixDest);
+  async start(): Promise<void> {
+    try {
+      await this.context.audioWorklet.addModule('/worklets/pcm-recorder-processor.js');
+    } catch {
+      // Module may already be registered on this context; that's fine.
+    }
 
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : 'audio/webm';
-    this.recorder = new MediaRecorder(this.mixDest.stream, { mimeType });
-    this.chunks = [];
-    this.recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) this.chunks.push(e.data);
+    this.mixGain = this.context.createGain();
+    this.modelOutput.connect(this.mixGain);
+    this.micSource = this.context.createMediaStreamSource(this.micStream);
+    this.micSource.connect(this.mixGain);
+
+    this.worklet = new AudioWorkletNode(this.context, 'pcm-recorder-processor');
+    this.worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+      this.pcmChunks.push(new Int16Array(e.data.slice(0)));
     };
-    this.recorder.start(1000); // gather data every second
+    this.mixGain.connect(this.worklet);
+
+    // Keep the worklet in the active render graph without adding audible output.
+    this.silentSink = this.context.createGain();
+    this.silentSink.gain.value = 0;
+    this.worklet.connect(this.silentSink);
+    this.silentSink.connect(this.context.destination);
   }
 
-  /** Stop recording and resolve with the finished audio blob. */
-  async stop(): Promise<Blob | null> {
-    const recorder = this.recorder;
-    if (!recorder) return null;
-
-    const blob = await new Promise<Blob>((resolve) => {
-      recorder.onstop = () => resolve(new Blob(this.chunks, { type: recorder.mimeType }));
-      if (recorder.state !== 'inactive') recorder.stop();
-      else resolve(new Blob(this.chunks, { type: recorder.mimeType }));
-    });
-
+  /** Stop recording and return the mixed conversation as a seekable WAV. */
+  stop(): Blob | null {
     try {
-      this.modelOutput.disconnect(this.mixDest!);
+      this.modelOutput.disconnect(this.mixGain!);
     } catch {
-      // may already be disconnected
+      // already disconnected
     }
+    this.worklet?.port.close();
+    this.worklet?.disconnect();
     this.micSource?.disconnect();
-    this.recorder = null;
-    this.mixDest = null;
+    this.mixGain?.disconnect();
+    this.silentSink?.disconnect();
+
+    const blob = this.pcmChunks.length
+      ? int16ToWavBlob(concatInt16(this.pcmChunks), this.context.sampleRate)
+      : null;
+
+    this.worklet = null;
     this.micSource = null;
+    this.mixGain = null;
+    this.silentSink = null;
     return blob;
   }
 }

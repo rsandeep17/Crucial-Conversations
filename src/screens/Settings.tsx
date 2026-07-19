@@ -18,6 +18,7 @@ export function SettingsScreen({
   const [warnCostUsd, setWarnCostUsd] = useState(settings.warnCostUsd);
   const [warnMinutes, setWarnMinutes] = useState(settings.warnMinutes);
   const [evalUseAudio, setEvalUseAudio] = useState(settings.evalUseAudio);
+  const [usdToInr, setUsdToInr] = useState(settings.usdToInr);
   const [reveal, setReveal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -26,7 +27,7 @@ export function SettingsScreen({
     setSaving(true);
     setSavedMsg(null);
     try {
-      const updated = await saveSettings({ apiKey, liveModel, evalModel, voice, warnCostUsd, warnMinutes, evalUseAudio });
+      const updated = await saveSettings({ apiKey, liveModel, evalModel, voice, warnCostUsd, warnMinutes, evalUseAudio, usdToInr });
       onSaved(updated);
       setSavedMsg('Saved.');
     } catch (err) {
@@ -108,6 +109,18 @@ export function SettingsScreen({
           <small className="muted">A nudge appears past this. No cutoff.</small>
         </label>
       </div>
+
+      <label className="field">
+        <span>USD → INR rate</span>
+        <input
+          type="number"
+          step="0.5"
+          min="1"
+          value={usdToInr}
+          onChange={(e) => setUsdToInr(Number(e.target.value))}
+        />
+        <small className="muted">Costs are shown in rupees using this rate.</small>
+      </label>
 
       <label className="checkbox-field">
         <input
