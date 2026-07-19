@@ -1,0 +1,200 @@
+import type { Plugin, Connect } from 'vite';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+/**
+ * A tiny file-IO API served *inside* the Vite dev server, so the whole app runs
+ * from a single `npm run dev` process. It only reads/writes plain files under
+ * `data/` on the local machine. No model calls pass through here — the browser
+ * talks to Gemini directly.
+ */
+
+const DATA_DIR = path.resolve(process.cwd(), 'data');
+const SETTINGS_PATH = path.join(DATA_DIR, 'settings.json');
+const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
+
+// Defaults are written on first read so the settings file always exists on disk.
+const DEFAULT_SETTINGS = {
+  apiKey: '',
+  liveModel: 'gemini-3.1-flash-live-preview',
+  evalModel: 'gemini-3.5-flash',
+  voice: 'Charon',
+  // Editable pricing table (USD per 1M tokens). Defaults are the paid-tier
+  // rates from ai.google.dev/gemini-api/docs/pricing as of July 2026 for
+  // gemini-3.1-flash-live-preview (live) and gemini-3.5-flash (eval). These
+  // are preview-model prices and can change — edit in Settings if they drift.
+  // Cost shown in-app is an estimate; Cloud Console billing is authoritative.
+  pricing: {
+    liveAudioInput: 3.0,
+    liveTextInput: 0.75,
+    liveAudioOutput: 12.0,
+    liveTextOutput: 4.5,
+    evalInput: 1.5,
+    evalOutput: 9.0,
+  },
+  // Soft warning thresholds for the live session — the UI nudges, never cuts off.
+  warnCostUsd: 0.5,
+  warnMinutes: 10,
+  // Send the user's spoken audio to the evaluator so delivery/tone is judged.
+  evalUseAudio: true,
+};
+
+async function ensureDataDir(): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+}
+
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  return (await readRawBody(req)).toString('utf8');
+}
+
+/** Filesystem-safe, sortable session id derived from the current time. */
+function newSessionId(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const suffix = Math.floor(Math.random() * 1e6).toString(36);
+  return `${stamp}-${suffix}`;
+}
+
+async function createSession(body: string): Promise<{ id: string }> {
+  const { meta, transcript } = JSON.parse(body);
+  const id = newSessionId();
+  const dir = path.join(SESSIONS_DIR, id);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ id, ...meta }, null, 2), 'utf8');
+  await fs.writeFile(
+    path.join(dir, 'transcript.json'),
+    JSON.stringify(transcript ?? [], null, 2),
+    'utf8',
+  );
+  return { id };
+}
+
+async function saveRecording(id: string, data: Buffer): Promise<void> {
+  const dir = path.join(SESSIONS_DIR, id);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'recording.webm'), data);
+}
+
+async function updateSession(id: string, body: string): Promise<unknown> {
+  const { metaPatch, evaluationMarkdown } = JSON.parse(body);
+  const dir = path.join(SESSIONS_DIR, id);
+  const metaPath = path.join(dir, 'meta.json');
+  const current = JSON.parse(await fs.readFile(metaPath, 'utf8'));
+  const merged = { ...current, ...(metaPatch ?? {}) };
+  await fs.writeFile(metaPath, JSON.stringify(merged, null, 2), 'utf8');
+  if (typeof evaluationMarkdown === 'string') {
+    await fs.writeFile(path.join(dir, 'evaluation.md'), evaluationMarkdown, 'utf8');
+  }
+  return merged;
+}
+
+async function listSessions(): Promise<unknown[]> {
+  await fs.mkdir(SESSIONS_DIR, { recursive: true });
+  const entries = await fs.readdir(SESSIONS_DIR, { withFileTypes: true });
+  const metas: unknown[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const raw = await fs.readFile(path.join(SESSIONS_DIR, entry.name, 'meta.json'), 'utf8');
+      metas.push(JSON.parse(raw));
+    } catch {
+      // skip incomplete session folders
+    }
+  }
+  return metas;
+}
+
+function sendJson(res: ServerResponse, status: number, payload: unknown): void {
+  const body = JSON.stringify(payload);
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(body);
+}
+
+async function readSettings(): Promise<unknown> {
+  await ensureDataDir();
+  try {
+    const raw = await fs.readFile(SETTINGS_PATH, 'utf8');
+    // Merge onto defaults so newly-added fields appear for old files.
+    const parsed = JSON.parse(raw);
+    // Migrate legacy files written before real pricing existed: if every rate
+    // the user actually saved is zero/absent, use the current defaults so cost
+    // isn't shown as $0. Otherwise merge their values over the defaults.
+    const savedPricing = parsed.pricing ?? {};
+    const legacyAllZero = ['liveAudioInput', 'liveTextInput', 'liveAudioOutput', 'evalInput', 'evalOutput'].every(
+      (k) => !savedPricing[k],
+    );
+    const pricing = legacyAllZero
+      ? { ...DEFAULT_SETTINGS.pricing }
+      : { ...DEFAULT_SETTINGS.pricing, ...savedPricing };
+    return { ...DEFAULT_SETTINGS, ...parsed, pricing };
+  } catch {
+    await fs.writeFile(SETTINGS_PATH, JSON.stringify(DEFAULT_SETTINGS, null, 2), 'utf8');
+    return DEFAULT_SETTINGS;
+  }
+}
+
+async function writeSettings(body: string): Promise<unknown> {
+  await ensureDataDir();
+  const incoming = JSON.parse(body);
+  const current = (await readSettings()) as Record<string, unknown>;
+  const merged = { ...current, ...incoming, pricing: { ...(current.pricing as object), ...(incoming.pricing ?? {}) } };
+  await fs.writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2), 'utf8');
+  return merged;
+}
+
+const handler: Connect.NextHandleFunction = (req, res, next) => {
+  const url = req.url ?? '';
+  if (!url.startsWith('/api/')) return next();
+
+  (async () => {
+    try {
+      if (url === '/api/settings' && req.method === 'GET') {
+        return sendJson(res, 200, await readSettings());
+      }
+      if (url === '/api/settings' && req.method === 'PUT') {
+        const body = await readBody(req);
+        return sendJson(res, 200, await writeSettings(body));
+      }
+      if (url === '/api/sessions' && req.method === 'GET') {
+        return sendJson(res, 200, await listSessions());
+      }
+      if (url === '/api/sessions' && req.method === 'POST') {
+        const body = await readBody(req);
+        return sendJson(res, 201, await createSession(body));
+      }
+      const recMatch = url.match(/^\/api\/sessions\/([^/]+)\/recording$/);
+      if (recMatch && req.method === 'PUT') {
+        const data = await readRawBody(req);
+        await saveRecording(decodeURIComponent(recMatch[1]), data);
+        return sendJson(res, 200, { ok: true });
+      }
+      const updMatch = url.match(/^\/api\/sessions\/([^/]+)$/);
+      if (updMatch && req.method === 'PUT') {
+        const body = await readBody(req);
+        return sendJson(res, 200, await updateSession(decodeURIComponent(updMatch[1]), body));
+      }
+      return sendJson(res, 404, { error: `No API route for ${req.method} ${url}` });
+    } catch (err) {
+      return sendJson(res, 500, { error: (err as Error).message });
+    }
+  })();
+};
+
+export function localApiPlugin(): Plugin {
+  return {
+    name: 'hard-conversations-local-api',
+    configureServer(server) {
+      server.middlewares.use(handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler);
+    },
+  };
+}
