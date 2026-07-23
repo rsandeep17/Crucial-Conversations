@@ -1,6 +1,7 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, type ThinkingLevel } from '@google/genai';
 import type { Intensity, SessionMode } from '../personas/personas';
 import type { Turn } from './sessionStore';
+import type { EvalThinkingLevel } from './settings';
 import { formatDuration, type EvalUsage } from './cost';
 
 export const SCORE_DIMENSIONS = [
@@ -126,10 +127,12 @@ export async function evaluateSession(params: {
   intensity: Intensity;
   scenarioNote?: string;
   transcript: Turn[];
+  /** Reasoning effort for the eval model (Gemini 3 family). Defaults to LOW. */
+  thinkingLevel?: EvalThinkingLevel;
   /** Optional: the user's spoken audio, so delivery/tone is assessed too. */
   audio?: { data: string; mimeType: string };
 }): Promise<EvalResult> {
-  const { apiKey, model, mode, prd, situation, personaName, personaTitle, intensity, scenarioNote, transcript, audio } =
+  const { apiKey, model, mode, prd, situation, personaName, personaTitle, intensity, scenarioNote, transcript, thinkingLevel, audio } =
     params;
   const ai = new GoogleGenAI({ apiKey });
 
@@ -198,6 +201,7 @@ export async function evaluateSession(params: {
     config: {
       responseMimeType: 'application/json',
       responseJsonSchema: RESPONSE_SCHEMA,
+      ...(thinkingLevel ? { thinkingConfig: { thinkingLevel: thinkingLevel as ThinkingLevel } } : {}),
     },
   });
 

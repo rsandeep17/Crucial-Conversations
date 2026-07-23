@@ -18,11 +18,11 @@ const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
 const DEFAULT_SETTINGS = {
   apiKey: '',
   liveModel: 'gemini-3.1-flash-live-preview',
-  evalModel: 'gemini-3.5-flash',
+  evalModel: 'gemini-3.5-flash-lite',
   voice: 'Charon',
   // Editable pricing table (USD per 1M tokens). Defaults are the paid-tier
   // rates from ai.google.dev/gemini-api/docs/pricing as of July 2026 for
-  // gemini-3.1-flash-live-preview (live) and gemini-3.5-flash (eval). These
+  // gemini-3.1-flash-live-preview (live) and gemini-3.5-flash-lite (eval). These
   // are preview-model prices and can change — edit in Settings if they drift.
   // Cost shown in-app is an estimate; Cloud Console billing is authoritative.
   pricing: {
@@ -30,12 +30,15 @@ const DEFAULT_SETTINGS = {
     liveTextInput: 0.75,
     liveAudioOutput: 12.0,
     liveTextOutput: 4.5,
-    evalInput: 1.5,
-    evalOutput: 9.0,
+    evalInput: 0.3,
+    evalOutput: 2.5,
   },
   // Soft warning thresholds for the live session — the UI nudges, never cuts off.
   warnCostUsd: 0.5,
   warnMinutes: 10,
+  // Reasoning effort for the evaluation model (Gemini 3 family). LOW keeps eval
+  // cheap; MINIMAL is the floor (Gemini 3 can't fully disable thinking).
+  evalThinkingLevel: 'LOW',
   // Send the user's spoken audio to the evaluator so delivery/tone is judged.
   evalUseAudio: true,
   // USD→INR rate for showing cost in rupees (editable in Settings).
@@ -57,11 +60,11 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 /**
- * Readable, sortable session id: "YYYY-MM-DD HH-MM-SS" in Indian Standard Time.
+ * Readable, sortable timestamp: "YYYY-MM-DD HH-MM-SS" in Indian Standard Time.
  * 24-hour clock; dashes in the time because ':' is illegal in Windows folder
  * names. Space-separated so the folder reads naturally.
  */
-function newSessionId(): string {
+function nowIstStamp(): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
@@ -79,9 +82,31 @@ function newSessionId(): string {
   return `${p.year}-${p.month}-${p.day} ${hour}-${p.minute}-${p.second}`;
 }
 
+// Human labels for the session-mode categories, used to prefix the folder name.
+const CATEGORY_LABELS: Record<string, string> = {
+  'prd-review': 'PRD Review',
+  custom: 'Custom Scenario',
+};
+
+/** Strip characters illegal in Windows folder names, collapse whitespace. */
+function safeFolderPart(s: string): string {
+  return s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Session id / folder name: "<Category> YYYY-MM-DD HH-MM-SS", e.g.
+ * "PRD Review 2026-07-23 22-12-07". The category prefix makes the sessions
+ * folder scannable at a glance; the IST timestamp keeps them sortable and unique.
+ */
+function newSessionId(category: unknown): string {
+  const key = typeof category === 'string' ? category : '';
+  const label = CATEGORY_LABELS[key] ?? (key ? safeFolderPart(key) : 'Session');
+  return `${label} ${nowIstStamp()}`;
+}
+
 async function createSession(body: string): Promise<{ id: string }> {
   const { meta, transcript } = JSON.parse(body);
-  const id = newSessionId();
+  const id = newSessionId(meta?.category);
   const dir = path.join(SESSIONS_DIR, id);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, 'meta.json'), JSON.stringify({ id, ...meta }, null, 2), 'utf8');

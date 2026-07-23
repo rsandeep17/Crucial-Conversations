@@ -97,6 +97,7 @@ export function App() {
         intensity: c.intensity,
         scenarioNote: c.scenarioNote,
         transcript: r.transcript,
+        thinkingLevel: s.evalThinkingLevel,
         audio,
       });
       setEvalState({ status: 'done', report, usage });

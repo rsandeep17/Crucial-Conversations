@@ -50,14 +50,14 @@ Key modules:
 3. **Who speaks first:** the **AI** opens (behavior rules tell it to greet/start without waiting) in both modes.
 4. **Turn-taking:** automatic, via the Live API's server-side voice-activity detection. Stop talking → the AI responds. Talk over it → it stops (barge-in). No turn counter. **During the call there is NO live transcript** (it was distracting) — instead a Zoom-like stage shows two avatars (you + the counterpart) whose glow rings react to real mic/model audio levels. The full transcript appears only afterward on the summary.
 5. **Ending:** two ways. (a) You click "End conversation" anytime. (b) The AI wraps up naturally via an `end_meeting` function tool (PRD: once it has pressure-tested the key decisions; Custom: when the conversation reaches a natural resolution); the app lets the closing line finish playing, then ends. A **soft guardrail** (Settings: warn-at-cost and warn-at-minutes) turns the live cost/time meters red and shows a nudge when exceeded — it never cuts you off.
-6. **On end:** the session is saved to `data/sessions/<id>/`, then an **evaluation** runs automatically (`gemini-3.5-flash` over the transcript + context, and — unless disabled in Settings — the user's spoken audio as WAV, so delivery/tone is judged too). `evaluateSession()` branches on mode: the PRD rubric (defending a PRD) or a **generic communication rubric** (situation-aware) — both score the **same 6 trendable dimensions** and produce what went well / what to improve where **each point is anchored to the actual exchange** (the counterpart's line, the user's verbatim words, and a timestamp), what to practice next, and follow-up challenges. The report renders on the summary screen and is saved as `evaluation.md` (scores + eval cost merged into `meta.json`). The summary shows **duration and total cost (voice + eval)**. Transcript turns carry timestamps.
+6. **On end:** the session is saved to `data/sessions/<id>/`, then an **evaluation** runs automatically (`gemini-3.5-flash-lite` at a configurable **thinking level** — default LOW — over the transcript + context, and — unless disabled in Settings — the user's spoken audio as WAV, so delivery/tone is judged too). `evaluateSession()` branches on mode: the PRD rubric (defending a PRD) or a **generic communication rubric** (situation-aware) — both score the **same 6 trendable dimensions** and produce what went well / what to improve where **each point is anchored to the actual exchange** (the counterpart's line, the user's verbatim words, and a timestamp), what to practice next, and follow-up challenges. The report renders on the summary screen and is saved as `evaluation.md` (scores + eval cost merged into `meta.json`). The summary shows **duration and total cost (voice + eval)**. Transcript turns carry timestamps.
 
 ## Data layout
 
 ```
 data/
-├── settings.json              # api key, model ids, voice, pricing table, warn thresholds
-└── sessions/<id>/              # id = "YYYY-MM-DD HH-MM-SS" in IST (readable, 24h)
+├── settings.json              # api key, model ids, eval thinking level, voice, pricing table, warn thresholds
+└── sessions/<id>/              # id = "<Category> YYYY-MM-DD HH-MM-SS" in IST, e.g. "PRD Review 2026-07-23 22-12-07"
     ├── meta.json              # category(mode), persona, intensity, prd|situation, duration, usage, cost, scores
     ├── transcript.json        # [{ role: 'user'|'persona', text }]
     ├── evaluation.md          # rendered evaluation report
@@ -68,8 +68,8 @@ data/
 ## Models & cost
 
 - **Live voice:** `gemini-3.1-flash-live-preview` (native audio).
-- **Evaluation:** `gemini-3.5-flash` (configurable in Settings), one `generateContent` call per session with a JSON-schema structured response.
-- **Pricing table** (USD per 1M tokens, editable in Settings; defaults from ai.google.dev pricing, July 2026): live audio in $3 / out $12, text in $0.75 / out $4.50; eval in $1.50 / out $9.
+- **Evaluation:** one `generateContent` call per session with a JSON-schema structured response. The model is a **Settings dropdown** (`EVAL_MODELS` in `src/lib/settings.ts`): `gemini-3.5-flash-lite` (default, cheapest) or `gemini-3.6-flash` (deeper, pricier). Switching the model **auto-updates the eval pricing** (each option carries its own `evalInput`/`evalOutput`), so the cost estimate stays right without hand-editing. Reasoning effort is a second dropdown grouped under it — `thinkingConfig.thinkingLevel` (MINIMAL / LOW / MEDIUM / HIGH, default LOW), shared by both models. Gemini 3 models can't fully disable thinking — MINIMAL is the floor. Thinking tokens are billed as output (folded into eval `outputTokens`), so a lower level directly cuts eval cost. Rationale for the model + level choice: `docs/eval-cost-decision.md`.
+- **Pricing table** (USD per 1M tokens, editable in Settings; defaults from ai.google.dev pricing, July 2026): live audio in $3 / out $12, text in $0.75 / out $4.50; eval (flash-lite) in $0.30 / out $2.50.
 - Cost shown in-app is an **estimate** derived from the Live API's `usageMetadata`. **Important billing mechanic:** the Live API re-bills the full cumulative context every turn (prior audio is kept as tokens), and each server message is a per-turn snapshot — so the app **sums every snapshot's per-modality tokens** (`LiveUsageTracker` in `src/lib/cost.ts`). Summing matches Cloud billing within ~a few percent; taking the max/last value undercounts by ~2-4x (that was a real early bug). Eval audio input is billed at the normal input rate (~$0.003/min). **Google Cloud billing is authoritative.**
 - **Cost is displayed in ₹ (INR)** via a `usdToInr` rate in Settings (default 85). The summary's cost-breakdown accordion shows tokens **and** ₹ cost per line (voice audio in/out, voice text, eval in/out) plus a total.
 
@@ -90,10 +90,10 @@ data/
 
 ## Known limitations (today)
 
-- **Pricing table has no in-app editor yet.** Rates ship with correct defaults and are read from `data/settings.json`; to change them, hand-edit that file (or add a Settings UI). Warn thresholds (cost/minutes) ARE editable in Settings.
+- **No in-app editor for the LIVE pricing rates.** They ship with correct defaults in `data/settings.json`; hand-edit that file to change them. (Eval rates DO update automatically from the eval-model dropdown; `usdToInr`, warn thresholds, audio-eval toggle, eval model, and eval thinking level are all editable in Settings.)
 - **No reconnection yet.** The Live API caps audio sessions (~15 min) and will close the socket; resumption handles are captured but reconnection isn't implemented yet (M6). However, an unexpected close now **auto-finalizes** the session (saves + evaluates what we have, marked `endedBy: 'disconnect'`) rather than losing it. `StrictMode` is intentionally OFF (`main.tsx`) because its dev double-mount raced the async Live connect and left an orphaned, still-billing session — the root cause of a spurious "operation was aborted" banner + inflated cost.
 - **Evaluation quality is unproven on real transcripts** — the prompt/rubric exists and is structured, but hasn't been run against an actual live session yet.
 - **Auto-start on connect** relies on the browser carrying the Setup click through the screen transition; if the persona ever fails to start talking, an explicit "Begin" button is the fix.
 - **Clickable-timestamp seeking** now uses a seekable WAV recording (was flaky on webm). Report/transcript timestamps seek the player and play from there. Alignment is approximate (recording starts a beat after the session clock).
 - **PRD input is paste-only** (no PDF/docx upload yet).
-- **No in-app pricing-table editor** — rates live in `data/settings.json` (defaults correct); the `usdToInr`, warn thresholds, and audio-eval toggle ARE editable in Settings.
+- **No in-app editor for LIVE pricing rates** — they live in `data/settings.json` (defaults correct). Eval model/thinking-level/rates, `usdToInr`, warn thresholds, and the audio-eval toggle ARE editable in Settings.

@@ -1,5 +1,18 @@
 import { useState } from 'react';
-import { saveSettings, type Settings } from '../lib/settings';
+import {
+  saveSettings,
+  EVAL_MODELS,
+  EVAL_THINKING_LEVELS,
+  type EvalThinkingLevel,
+  type Settings,
+} from '../lib/settings';
+
+const THINKING_HINTS: Record<EvalThinkingLevel, string> = {
+  MINIMAL: 'Cheapest & fastest — least reasoning',
+  LOW: 'Recommended — cheap, still thorough',
+  MEDIUM: 'More analysis, higher cost',
+  HIGH: 'Deepest analysis, highest cost',
+};
 
 // A subset of the 30 prebuilt Live voices, enough to give personas distinct voices.
 const VOICES = ['Charon', 'Puck', 'Kore', 'Fenrir', 'Aoede', 'Orus', 'Leda', 'Zephyr'];
@@ -13,7 +26,10 @@ export function SettingsScreen({
 }) {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [liveModel, setLiveModel] = useState(settings.liveModel);
-  const [evalModel, setEvalModel] = useState(settings.evalModel);
+  const [evalModel, setEvalModel] = useState(
+    EVAL_MODELS.some((m) => m.id === settings.evalModel) ? settings.evalModel : EVAL_MODELS[0].id,
+  );
+  const [evalThinkingLevel, setEvalThinkingLevel] = useState<EvalThinkingLevel>(settings.evalThinkingLevel);
   const [voice, setVoice] = useState(settings.voice);
   const [warnCostUsd, setWarnCostUsd] = useState(settings.warnCostUsd);
   const [warnMinutes, setWarnMinutes] = useState(settings.warnMinutes);
@@ -27,7 +43,20 @@ export function SettingsScreen({
     setSaving(true);
     setSavedMsg(null);
     try {
-      const updated = await saveSettings({ apiKey, liveModel, evalModel, voice, warnCostUsd, warnMinutes, evalUseAudio, usdToInr });
+      const modelOpt = EVAL_MODELS.find((m) => m.id === evalModel) ?? EVAL_MODELS[0];
+      const updated = await saveSettings({
+        apiKey,
+        liveModel,
+        evalModel,
+        evalThinkingLevel,
+        voice,
+        warnCostUsd,
+        warnMinutes,
+        evalUseAudio,
+        usdToInr,
+        // Keep the eval pricing locked to the chosen model so the cost estimate is accurate.
+        pricing: { ...settings.pricing, evalInput: modelOpt.evalInput, evalOutput: modelOpt.evalOutput },
+      });
       onSaved(updated);
       setSavedMsg('Saved.');
     } catch (err) {
@@ -66,13 +95,43 @@ export function SettingsScreen({
         <input value={liveModel} onChange={(e) => setLiveModel(e.target.value)} />
       </label>
 
-      <label className="field">
-        <span>Evaluation model</span>
-        <input value={evalModel} onChange={(e) => setEvalModel(e.target.value)} />
-        <small className="muted">
-          Default is a Flash-tier model; switch to a Pro model here if a report ever reads shallow.
-        </small>
-      </label>
+      <fieldset className="field-group">
+        <legend>Evaluation</legend>
+
+        <label className="field">
+          <span>Model</span>
+          <select value={evalModel} onChange={(e) => setEvalModel(e.target.value)}>
+            {EVAL_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} (${m.evalInput.toFixed(2)} / ${m.evalOutput.toFixed(2)} per 1M)
+              </option>
+            ))}
+          </select>
+          <small className="muted">
+            The report runs on this model. Switching it also updates the cost estimate to that
+            model's rates automatically — no need to edit pricing by hand.
+          </small>
+        </label>
+
+        <label className="field">
+          <span>Thinking level</span>
+          <select
+            value={evalThinkingLevel}
+            onChange={(e) => setEvalThinkingLevel(e.target.value as EvalThinkingLevel)}
+          >
+            {EVAL_THINKING_LEVELS.map((lvl) => (
+              <option key={lvl} value={lvl}>
+                {lvl.charAt(0) + lvl.slice(1).toLowerCase()} — {THINKING_HINTS[lvl]}
+              </option>
+            ))}
+          </select>
+          <small className="muted">
+            How hard the eval model reasons. Lower = fewer billed thinking tokens = cheaper. Applies
+            to whichever model is selected; Gemini 3 models can't fully turn thinking off — MINIMAL
+            is the floor.
+          </small>
+        </label>
+      </fieldset>
 
       <label className="field">
         <span>Default persona voice</span>

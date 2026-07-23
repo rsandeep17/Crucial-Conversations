@@ -202,6 +202,23 @@ code {
   margin-top: 5px;
 }
 
+/* Groups related fields (e.g. eval model + its thinking level) into one panel. */
+.field-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 16px 14px;
+  margin: 18px 0;
+}
+
+.field-group > legend {
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 input,
 select,
 textarea {
