@@ -9,10 +9,11 @@ import { arrayBufferToBase64 } from './lib/audio/pcm';
 // ~1.33x the raw bytes — so keep the raw WAV under ~14 MB (~7 min of speech).
 // Longer sessions fall back to a transcript-only evaluation.
 const MAX_INLINE_AUDIO_BYTES = 14 * 1024 * 1024;
-import type { SessionConfig } from './personas/personas';
+import type { SessionConfig, SessionMode } from './personas/personas';
 import type { ConversationResult } from './lib/conversation';
 import { Home } from './screens/Home';
 import { Setup } from './screens/Setup';
+import { CustomSetup } from './screens/CustomSetup';
 import { LiveSession } from './screens/LiveSession';
 import { Summary, type EvalState } from './screens/Summary';
 import { SettingsScreen } from './screens/Settings';
@@ -24,6 +25,7 @@ export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>('home');
+  const [mode, setMode] = useState<SessionMode>('prd-review');
   const [config, setConfig] = useState<SessionConfig | null>(null);
   const [result, setResult] = useState<ConversationResult | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ status: 'saving' });
@@ -55,13 +57,14 @@ export function App() {
     const liveCostVal = liveCost(r.usage, s.pricing);
     const meta: SessionMeta = {
       createdAt: new Date().toISOString(),
-      category: 'prd-review',
+      category: c.mode,
       personaId: c.persona.id,
       personaName: c.persona.name,
       personaTitle: c.persona.title,
       intensity: c.intensity,
       scenarioNote: c.scenarioNote,
       prd: c.prd,
+      situation: c.situation,
       durationSec: r.durationSec,
       endedBy: r.endedBy,
       usage: { live: r.usage },
@@ -86,7 +89,9 @@ export function App() {
       const { report, usage } = await evaluateSession({
         apiKey: s.apiKey,
         model: s.evalModel,
+        mode: c.mode,
         prd: c.prd,
+        situation: c.situation,
         personaName: c.persona.name,
         personaTitle: c.persona.title,
         intensity: c.intensity,
@@ -155,9 +160,27 @@ export function App() {
         {loadError && <div className="error-box">Could not load settings: {loadError}</div>}
         {!settings && !loadError && <p className="muted screen">Loading…</p>}
 
-        {settings && view === 'home' && <Home onPick={() => setView('setup')} />}
+        {settings && view === 'home' && (
+          <Home
+            onPick={(id) => {
+              setMode(id === 'custom' ? 'custom' : 'prd-review');
+              setView('setup');
+            }}
+          />
+        )}
 
-        {settings && view === 'setup' && (
+        {settings && view === 'setup' && mode === 'custom' && (
+          <CustomSetup
+            onBack={navHome}
+            voice={settings.voice}
+            onStart={(c) => {
+              setConfig(c);
+              setView('live');
+            }}
+          />
+        )}
+
+        {settings && view === 'setup' && mode !== 'custom' && (
           <Setup
             onBack={navHome}
             onStart={(c) => {

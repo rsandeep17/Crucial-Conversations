@@ -92,7 +92,7 @@ export function Setup({
         <button
           className="btn primary"
           disabled={!canStart}
-          onClick={() => onStart({ persona, intensity, prd, scenarioNote })}
+          onClick={() => onStart({ mode: 'prd-review', persona, intensity, prd, scenarioNote })}
         >
           Start conversation
         </button>

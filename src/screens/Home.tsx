@@ -12,6 +12,12 @@ const CATEGORIES: Category[] = [
     blurb: 'Walk engineers, architects, and senior ICs through your PRD and defend your decisions.',
     available: true,
   },
+  {
+    id: 'custom',
+    title: 'Custom Scenario',
+    blurb: 'Describe any conversation you want to rehearse. The AI invents the other person and dives in.',
+    available: true,
+  },
   { id: 'bad-news', title: 'Bad News Delivery', blurb: 'Deliver a slip, a cut, or a reversal.', available: false },
   { id: 'scope-cut', title: 'Scope Cut Negotiation', blurb: 'Negotiate what ships and what waits.', available: false },
   { id: 'xfn-align', title: 'Cross-functional Alignment', blurb: 'Get design, eng, and GTM to one plan.', available: false },

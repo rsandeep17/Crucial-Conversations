@@ -8,7 +8,7 @@
 
 ## What this is
 
-A **local, single-user web app** for rehearsing hard product-management conversations by voice. You paste a PRD, pick an adversarial-but-realistic AI persona (e.g., a skeptical staff engineer), and hold a real-time spoken conversation powered by the Gemini Live API. When you end it, the session (transcript, audio recording, cost, duration) is saved locally. A written evaluation of your performance is planned but not yet built (see Status).
+A **local, single-user web app** for rehearsing hard conversations by voice. Two modes: **PRD Review** — paste a PRD, pick an adversarial-but-realistic AI persona (e.g., a skeptical staff engineer); or **Custom Scenario** — describe *any* conversation you want to rehearse and the AI invents the fitting counterpart itself. Either way you hold a real-time spoken conversation powered by the Gemini Live API. When you end it, the session (transcript, audio recording, cost, duration) is saved locally and an automatic written evaluation runs.
 
 It is **not hosted and not a product** — it runs on the user's machine; the only network traffic that leaves the machine is direct calls to Google's Gemini API.
 
@@ -38,17 +38,19 @@ Key modules:
 | `src/lib/audio/SessionRecorder.ts` | Taps the mixed audio graph with an AudioWorklet → **seekable `.wav`** (client-side, no API cost). WAV, not MediaRecorder `.webm`, so the player can jump to any timestamp. |
 | `src/lib/cost.ts` | Token→USD math + `LiveUsageTracker` (handles cumulative usage metadata). |
 | `src/lib/sessionStore.ts` | Client for saving sessions to `/api/sessions`. |
-| `src/personas/personas.ts` | The 5 personas + intensity modifiers + `buildSystemInstruction()`. |
-| `src/screens/*` | Home, Setup, LiveSession, Summary, Settings. |
+| `src/personas/personas.ts` | The 5 personas + intensity modifiers (PRD + generic) + `SessionMode`/`SessionConfig` + `customPersona()` + `buildSystemInstruction()` (dispatches PRD vs custom). |
+| `src/lib/eval.ts` | Post-session evaluation. `evaluateSession()` branches on mode (PRD rubric vs generic-comms rubric); same 6 dimensions + structured schema for both. |
+| `src/screens/*` | Home (mode picker), Setup (PRD), CustomSetup (custom), LiveSession, Summary, Settings. |
 
 ## How a practice session works (the important part)
 
-1. **Setup:** you paste a PRD, choose a persona and an intensity (Collegial / Challenging / Hostile), and optionally add a scenario note.
-2. **Prompt assembly:** `buildSystemInstruction()` builds ONE system-instruction string = framing + the persona's character text + the intensity modifier + behavior rules + your scenario note + your full PRD (verbatim). There is **no pre-generated question list** — the model improvises in character, grounded in the PRD that sits in its context.
-3. **Who speaks first:** the **persona** opens the meeting (the behavior rules instruct it to greet and raise its first concern without waiting).
-4. **Turn-taking:** automatic, via the Live API's server-side voice-activity detection. Stop talking → the persona responds. Talk over it → it stops (barge-in). No turn counter. **During the call there is NO live transcript** (it was distracting) — instead a Zoom-like stage shows two avatars (you + the persona) whose glow rings react to real mic/model audio levels. The full transcript appears only afterward on the summary.
-5. **Ending:** two ways. (a) You click "End conversation" anytime. (b) The persona wraps up naturally: it's instructed to close once it has pressure-tested the key decisions, then it calls an `end_meeting` function tool; the app lets the closing line finish playing, then ends. A **soft guardrail** (Settings: warn-at-cost and warn-at-minutes) turns the live cost/time meters red and shows a nudge when exceeded — it never cuts you off.
-6. **On end:** the session is saved to `data/sessions/<id>/`, then an **evaluation** runs automatically (`gemini-3.5-flash` over the transcript + PRD, and — unless disabled in Settings — the user's spoken audio as WAV, so delivery/tone is judged too): scores on 6 dimensions, plus what went well / what to improve where **each point is anchored to the actual exchange** (the persona's line, the user's verbatim words, and a timestamp), what to practice next, and follow-up challenges. The report renders on the summary screen and is saved as `evaluation.md` (scores + eval cost merged into `meta.json`). The summary shows **duration and total cost (voice + eval)**. Transcript turns carry timestamps.
+0. **Pick a mode on Home:** **PRD Review** (paste-a-PRD, pick a persona) or **Custom Scenario** (describe any conversation; the AI invents the counterpart). This is a `SessionMode` (`'prd-review' | 'custom'`) that flows through `SessionConfig`; the two modes share the whole live/record/eval pipeline and only diverge in prompt assembly and the eval prompt.
+1. **Setup:** *PRD Review* — paste a PRD, choose a persona and intensity (Collegial / Challenging / Hostile), optional scenario note. *Custom* — a free-text situation box + intensity **only** (no persona picker; the model imagines the other party). Custom's counterpart uses the default voice from Settings.
+2. **Prompt assembly:** `buildSystemInstruction(config)` in `src/personas/personas.ts` dispatches on `config.mode`. *PRD* → `buildPrdInstruction` (framing + persona character + intensity + behavior rules + scenario note + full PRD verbatim). *Custom* → `buildCustomInstruction` (role-play framing that tells the model to invent and inhabit the fitting counterpart + a generic-conversation intensity modifier + behavior rules + your situation text verbatim). Neither uses a pre-generated question list — the model improvises in character.
+3. **Who speaks first:** the **AI** opens (behavior rules tell it to greet/start without waiting) in both modes.
+4. **Turn-taking:** automatic, via the Live API's server-side voice-activity detection. Stop talking → the AI responds. Talk over it → it stops (barge-in). No turn counter. **During the call there is NO live transcript** (it was distracting) — instead a Zoom-like stage shows two avatars (you + the counterpart) whose glow rings react to real mic/model audio levels. The full transcript appears only afterward on the summary.
+5. **Ending:** two ways. (a) You click "End conversation" anytime. (b) The AI wraps up naturally via an `end_meeting` function tool (PRD: once it has pressure-tested the key decisions; Custom: when the conversation reaches a natural resolution); the app lets the closing line finish playing, then ends. A **soft guardrail** (Settings: warn-at-cost and warn-at-minutes) turns the live cost/time meters red and shows a nudge when exceeded — it never cuts you off.
+6. **On end:** the session is saved to `data/sessions/<id>/`, then an **evaluation** runs automatically (`gemini-3.5-flash` over the transcript + context, and — unless disabled in Settings — the user's spoken audio as WAV, so delivery/tone is judged too). `evaluateSession()` branches on mode: the PRD rubric (defending a PRD) or a **generic communication rubric** (situation-aware) — both score the **same 6 trendable dimensions** and produce what went well / what to improve where **each point is anchored to the actual exchange** (the counterpart's line, the user's verbatim words, and a timestamp), what to practice next, and follow-up challenges. The report renders on the summary screen and is saved as `evaluation.md` (scores + eval cost merged into `meta.json`). The summary shows **duration and total cost (voice + eval)**. Transcript turns carry timestamps.
 
 ## Data layout
 
@@ -56,7 +58,7 @@ Key modules:
 data/
 ├── settings.json              # api key, model ids, voice, pricing table, warn thresholds
 └── sessions/<id>/              # id = "YYYY-MM-DD HH-MM-SS" in IST (readable, 24h)
-    ├── meta.json              # persona, intensity, prd, duration, usage, cost, scores
+    ├── meta.json              # category(mode), persona, intensity, prd|situation, duration, usage, cost, scores
     ├── transcript.json        # [{ role: 'user'|'persona', text }]
     ├── evaluation.md          # rendered evaluation report
     └── recording.wav          # mixed conversation audio (seekable WAV)
@@ -83,7 +85,8 @@ data/
 - **M2 (PRD Review session: setup, 5 personas, live session, recording, cost/duration, persistence) — DONE, build-verified; live-voice run pending user verification.**
 - **M2+ (persona natural wrap-up via `end_meeting` tool; soft cost/time guardrail) — DONE, build-verified.**
 - **M3 (auto evaluation report: scores, strengths/gaps with quotes, next steps; saved as `evaluation.md`) — DONE, build-verified; not yet run against a real live session.**
-- M4 playbook, M5 history/trends, M6 resilience/polish — see `plan.md`.
+- **M4 partial — Custom Scenario mode (free-text situation → AI invents the counterpart; intensity-only; generic-comms eval) — DONE, build-verified + UI-verified in the browser; live-voice run pending user verification.** Playbook (notes library + adherence eval) not started.
+- M5 history/trends, M6 resilience/polish — see `plan.md`.
 
 ## Known limitations (today)
 

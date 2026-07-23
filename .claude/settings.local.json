@@ -7,7 +7,8 @@
       "PowerShell(npm --version)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "PowerShell(npm run typecheck 2>&1)"
+      "PowerShell(npm run typecheck 2>&1)",
+      "PowerShell(npm run typecheck)"
     ]
   }
 }

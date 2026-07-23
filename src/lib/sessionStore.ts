@@ -19,6 +19,8 @@ export interface SessionMeta {
   intensity: Intensity;
   scenarioNote?: string;
   prd: string;
+  /** The freeform situation text for custom-mode sessions. */
+  situation?: string;
   durationSec: number;
   endedBy?: 'user' | 'persona' | 'disconnect';
   usage: { live: LiveUsage; eval?: EvalUsage };

@@ -1,5 +1,7 @@
 export type Intensity = 'collegial' | 'challenging' | 'hostile';
 
+export type SessionMode = 'prd-review' | 'custom';
+
 export interface Persona {
   id: string;
   name: string;
@@ -90,15 +92,98 @@ const INTENSITY_MODIFIER: Record<Intensity, string> = {
     'Stay professional — no personal attacks — but do not make it easy.',
 };
 
+/**
+ * Generic-conversation counterpart of INTENSITY_MODIFIER, worded for an
+ * arbitrary custom scenario (no PRD, no review framing).
+ */
+const CUSTOM_INTENSITY_MODIFIER: Record<Intensity, string> = {
+  collegial:
+    'Tone: warm, patient, and cooperative. Give the other person the benefit of the doubt, let them finish, ' +
+    'and rarely interrupt.',
+  challenging:
+    'Tone: challenging but reasonable. Push back on weak or evasive points, follow up when something is ' +
+    'vague, and occasionally interrupt if they ramble or dodge.',
+  hostile:
+    'Tone: adversarial, impatient, and emotionally charged to the degree the situation warrants. Interrupt, ' +
+    'express frustration, and hold your ground. Stay realistic and human — no cartoonish villainy, no personal cruelty.',
+};
+
+/**
+ * A stand-in Persona for custom scenarios. The user does not pick a character;
+ * the model invents the fitting counterpart from the situation text. This object
+ * only carries the voice and the neutral labels shown in the UI/transcript.
+ */
+export function customPersona(voice: string): Persona {
+  return {
+    id: 'custom',
+    name: 'Your counterpart',
+    title: 'Custom scenario',
+    voice,
+    blurb: '',
+    temperament: '',
+  };
+}
+
 export interface SessionConfig {
+  mode: SessionMode;
   persona: Persona;
   intensity: Intensity;
+  /** The PRD (prd-review mode). Empty for custom mode. */
   prd: string;
   scenarioNote?: string;
+  /** The freeform situation text (custom mode). Undefined for prd-review. */
+  situation?: string;
 }
 
 /** Assemble the full system instruction sent to the Live model for the session. */
 export function buildSystemInstruction(config: SessionConfig): string {
+  return config.mode === 'custom'
+    ? buildCustomInstruction(config)
+    : buildPrdInstruction(config);
+}
+
+/** System instruction for a freeform custom scenario. */
+function buildCustomInstruction(config: SessionConfig): string {
+  const { intensity, situation } = config;
+  const parts: string[] = [];
+
+  parts.push(
+    'You are role-playing a realistic person in a live, spoken practice conversation. The person you are ' +
+      'speaking with is rehearsing a difficult real-life conversation. Read the SITUATION below and fully ' +
+      'become the most fitting counterpart for it — invent a specific, believable person (their role, ' +
+      'personality, and stake in this) and remain that same person for the entire conversation. This is a ' +
+      'spoken conversation.',
+  );
+
+  parts.push(CUSTOM_INTENSITY_MODIFIER[intensity]);
+
+  parts.push(
+    'HOW TO BEHAVE:\n' +
+      '- Ground everything in the specific situation described below, and react the way that person genuinely would.\n' +
+      '- Speak naturally and conversationally. Keep your turns short — a sentence or two, then let them ' +
+      'respond. Do not deliver monologues or read lists out loud.\n' +
+      '- Open the conversation yourself, in character, with a natural first line. Do not wait to be prompted, ' +
+      'and do not narrate or describe the scene — just start talking as the person.\n' +
+      '- Stay fully in character for the entire conversation. Do NOT coach, evaluate, or break character to ' +
+      'give feedback — that happens after the session, separately.\n' +
+      '- Never mention that this is a simulation or that you are an AI.',
+  );
+
+  parts.push(
+    'ENDING THE CONVERSATION:\n' +
+      '- When the conversation reaches a natural resolution or has clearly run its course, give a brief, ' +
+      'in-character closing line, and only then call the `end_meeting` function to end the session. Do not ' +
+      'call it early, and do not announce the function itself — just say your closing line naturally and then call it.\n' +
+      '- If the other person clearly wants to keep going or raises something new, stay in it and keep engaging.',
+  );
+
+  parts.push(`THE SITUATION:\n"""\n${(situation ?? '').trim()}\n"""`);
+
+  return parts.join('\n\n');
+}
+
+/** System instruction for a PRD review meeting. */
+function buildPrdInstruction(config: SessionConfig): string {
   const { persona, intensity, prd, scenarioNote } = config;
   const parts: string[] = [];
 

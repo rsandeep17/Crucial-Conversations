@@ -120,7 +120,12 @@ export function Summary({
         {config.persona.name} · {config.persona.title} · {config.intensity}
       </p>
       {result.endedBy === 'persona' && (
-        <p className="end-note">🧑‍⚖️ {config.persona.name} wrapped up the meeting when they felt they'd made their point.</p>
+        <p className="end-note">
+          🧑‍⚖️{' '}
+          {config.mode === 'custom'
+            ? 'The other person wrapped up the conversation when it reached a natural close.'
+            : `${config.persona.name} wrapped up the meeting when they felt they'd made their point.`}
+        </p>
       )}
       {result.endedBy === 'disconnect' && (
         <p className="end-note warn">
